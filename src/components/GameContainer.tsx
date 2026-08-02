@@ -1,21 +1,34 @@
 import { useAtomValue } from 'jotai';
-import { screenAtom } from '../atoms/gameAtoms';
+import { gameModeAtom, screenAtom } from '../atoms/gameAtoms';
 import LevelSelectScreen from './LevelSelectScreen';
 import GameScreen from './GameScreen';
 import ResultScreen from './ResultScreen';
+import ClassicGameScreen from './ClassicGameScreen';
+import ClassicResultScreen from './ClassicResultScreen';
 import ErrorBoundary from './ErrorBoundary';
 
-const screenComponents = {
+/** 下落模式（音游）的屏幕组件映射 */
+const rhythmScreens = {
   levelSelect: <LevelSelectScreen />,
   game: <GameScreen />,
   result: <ResultScreen />,
 };
 
+/** 经典模式（原版按键序列跟打）的屏幕组件映射 */
+const classicScreens = {
+  levelSelect: <LevelSelectScreen />,
+  game: <ClassicGameScreen />,
+  result: <ClassicResultScreen />,
+};
+
 function GameContainer() {
   const currentScreen = useAtomValue(screenAtom);
+  const mode = useAtomValue(gameModeAtom);
+  // 两种模式共用选歌页；游戏 / 结算屏按模式切换
+  const screens = mode === 'classic' ? classicScreens : rhythmScreens;
 
   return (
-    <main id="game-container" className="flex justify-center content-center">
+    <main id="game-container" className="flex justify-center content-center w-full">
       <ErrorBoundary
         fallback={
           <div className="text-center p-8 bg-red-500/20 rounded-lg">
@@ -24,7 +37,7 @@ function GameContainer() {
           </div>
         }
       >
-        {screenComponents[currentScreen]}
+        {screens[currentScreen]}
       </ErrorBoundary>
     </main>
   );

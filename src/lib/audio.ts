@@ -37,6 +37,8 @@ async function initializeAudio() {
   polySynth = new Tone.PolySynth(Tone.Synth, {
     volume: 10,
   }).connect(reverb);
+  // maxPolyphony 提升到 64：编辑器预览中 hold 长条音符持续发声会同时占用多个复音
+  polySynth.maxPolyphony = 64;
   audioInitialized = true;
   console.log('Audio context started and initialized.');
 }
@@ -72,4 +74,29 @@ export const audioManager = {
     polySynth.releaseAll();
   },
   isInitialized: () => audioInitialized,
+  /**
+   * 节拍器滴答声（谱面编辑器预览用）。
+   * accent = true 表示每小节第 1 拍（强拍），音调更高。
+   */
+  playTick: (accent: boolean) => {
+    if (!audioInitialized) return;
+    polySynth.triggerAttackRelease(accent ? 'G6' : 'D6', '32n', Tone.now(), 0.6);
+  },
+  /**
+   * 按轨道号试听音符（谱面编辑器预览用）。
+   * @param lane       轨道下标 0~8
+   * @param durationMs 持续毫秒数（可选）：
+   *                   不传时按 16 分音符短促发声（tap 音符）；
+   *                   传入时声音持续对应时长（hold 长条音符的持续发声效果）。
+   */
+  playLaneNote: (lane: number, durationMs?: number) => {
+    if (!audioInitialized) return;
+    const key = KEYS[lane];
+    const note = key !== undefined ? currentScale[key] : undefined;
+    if (note) {
+      // Tone.js 的 duration 参数支持秒数；短音用 '16n' 记谱时长更干脆
+      const duration = durationMs && durationMs > 0 ? durationMs / 1000 : '16n';
+      polySynth.triggerAttackRelease(note, duration, Tone.now());
+    }
+  },
 };
