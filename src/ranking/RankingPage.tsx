@@ -58,40 +58,43 @@ function RankingPage() {
     [records],
   );
 
-  /**
-   * 最佳成绩：按「歌曲名#难度」分组，每组取分数最高的一条
-   * （同分时取游玩时间更早的，先到先得）。
-   */
-  const bestRecords = useMemo(() => {
-    const bestMap = new Map<string, ScoreRecord>();
-    for (const r of records) {
-      const key = `${r.songTitle}#${r.difficulty}`;
-      const prev = bestMap.get(key);
-      if (!prev || r.score > prev.score || (r.score === prev.score && r.playedAt < prev.playedAt)) {
-        bestMap.set(key, r);
-      }
-    }
-    // 按分数倒序展示
-    return [...bestMap.values()].sort((a, b) => b.score - a.score);
-  }, [records]);
-
-  /** 筛选 + 排序后的全部成绩列表 */
+  /** 筛选后的成绩列表（最佳成绩区与全部成绩表共用同一套筛选条件） */
   const filteredRecords = useMemo(() => {
     // 日期范围换算：起始日 00:00:00 ~ 截止日 23:59:59.999
     const fromTs = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null;
     const toTs = filterDateTo ? new Date(`${filterDateTo}T23:59:59.999`).getTime() : null;
 
-    const filtered = records.filter((r) => {
+    return records.filter((r) => {
       if (filterSong && r.songTitle !== filterSong) return false;
       if (filterDifficulty && r.difficulty !== Number(filterDifficulty)) return false;
       if (fromTs !== null && r.playedAt < fromTs) return false;
       if (toTs !== null && r.playedAt > toTs) return false;
       return true;
     });
+  }, [records, filterSong, filterDifficulty, filterDateFrom, filterDateTo]);
 
+  /**
+   * 最佳成绩：在【筛选结果】内按「歌曲名#难度」分组，每组取分数最高的一条
+   * （同分时取游玩时间更早的，先到先得），按分数倒序排列。
+   * 因此最佳成绩区同样响应歌曲 / 难度 / 日期范围筛选。
+   */
+  const bestRecords = useMemo(() => {
+    const bestMap = new Map<string, ScoreRecord>();
+    for (const r of filteredRecords) {
+      const key = `${r.songTitle}#${r.difficulty}`;
+      const prev = bestMap.get(key);
+      if (!prev || r.score > prev.score || (r.score === prev.score && r.playedAt < prev.playedAt)) {
+        bestMap.set(key, r);
+      }
+    }
+    return [...bestMap.values()].sort((a, b) => b.score - a.score);
+  }, [filteredRecords]);
+
+  /** 全部成绩表：筛选结果再按当前排序设置排列 */
+  const sortedRecords = useMemo(() => {
     const direction = sortOrder === 'desc' ? -1 : 1;
-    return [...filtered].sort((a, b) => (a[sortField] - b[sortField]) * direction);
-  }, [records, filterSong, filterDifficulty, filterDateFrom, filterDateTo, sortField, sortOrder]);
+    return [...filteredRecords].sort((a, b) => (a[sortField] - b[sortField]) * direction);
+  }, [filteredRecords, sortField, sortOrder]);
 
   /** 删除单条成绩（二次确认） */
   const handleDelete = (record: ScoreRecord) => {
@@ -145,24 +148,77 @@ function RankingPage() {
           </div>
         ) : (
           <>
-            {/* ===== 最佳成绩（按歌曲 + 难度分组） ===== */}
-            <section>
-              <h2 className="text-sm font-bold text-white/60 mb-2">最佳成绩（按歌曲 / 难度）</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {bestRecords.map((r) => (
-                  <div key={r.id} className="rounded-xl bg-white/5 border border-white/10 p-3">
-                    <div className="font-bold truncate" title={r.songTitle}>{r.songTitle}</div>
-                    <div className="text-xs text-white/50 mb-2">Lv.{r.difficulty}</div>
-                    <div className="flex items-end justify-between">
-                      <span className="text-2xl font-black text-emerald-300 tabular-nums">
-                        {r.score.toLocaleString()}
-                      </span>
-                      <span className="text-xs text-white/60 tabular-nums">
-                        {r.accuracy.toFixed(2)}% · {r.maxCombo} 连击
-                      </span>
-                    </div>
-                  </div>
-                ))}
+            {/* ===== 最佳成绩排行（按歌曲 + 难度分组取每组最高，响应筛选条件） ===== */}
+            <section className="overflow-hidden rounded-xl bg-white/5 border border-white/10">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5">
+                <h2 className="text-sm font-bold text-white/70">最佳成绩排行（按歌曲 / 难度）</h2>
+                <span className="text-xs text-white/40">{bestRecords.length} 组</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-white/10">
+                    <tr>
+                      <th className={thClass}>名次</th>
+                      <th className={thClass}>歌曲</th>
+                      <th className={thClass}>难度</th>
+                      <th className={thClass}>分数</th>
+                      <th className={thClass}>准确率</th>
+                      <th className={thClass}>最大连击</th>
+                      <th className={thClass}>P / G / M</th>
+                      <th className={thClass}>游玩时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bestRecords.map((r, index) => (
+                      <tr key={r.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/5">
+                        {/* 名次徽章：前三名金 / 银 / 铜高亮 */}
+                        <td className={tdClass}>
+                          <span
+                            className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-black ${
+                              index === 0
+                                ? 'bg-yellow-400/90 text-yellow-950'
+                                : index === 1
+                                  ? 'bg-slate-300/90 text-slate-700'
+                                  : index === 2
+                                    ? 'bg-amber-600/90 text-amber-950'
+                                    : 'bg-white/10 text-white/60'
+                            }`}
+                          >
+                            {index + 1}
+                          </span>
+                        </td>
+                        <td className={`${tdClass} font-bold max-w-56 truncate`} title={r.songTitle}>
+                          {r.songTitle}
+                        </td>
+                        <td className={tdClass}>
+                          <span className="rounded bg-emerald-400/15 px-1.5 py-0.5 text-xs font-bold text-emerald-300">
+                            Lv.{r.difficulty}
+                          </span>
+                        </td>
+                        <td className={`${tdClass} font-black text-emerald-300 tabular-nums`}>
+                          {r.score.toLocaleString()}
+                        </td>
+                        <td className={`${tdClass} tabular-nums`}>{r.accuracy.toFixed(2)}%</td>
+                        <td className={`${tdClass} tabular-nums`}>{r.maxCombo}</td>
+                        <td className={`${tdClass} tabular-nums`}>
+                          <span className="text-yellow-300">{r.perfect}</span>
+                          {' / '}
+                          <span className="text-sky-300">{r.good}</span>
+                          {' / '}
+                          <span className="text-red-400">{r.miss}</span>
+                        </td>
+                        <td className={`${tdClass} text-white/60 tabular-nums`}>{formatDateTime(r.playedAt)}</td>
+                      </tr>
+                    ))}
+                    {bestRecords.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-8 text-center text-white/40">
+                          没有符合筛选条件的成绩
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
 
@@ -243,7 +299,7 @@ function RankingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRecords.map((r) => (
+                  {sortedRecords.map((r) => (
                     <tr key={r.id} className="border-b border-white/5 last:border-b-0 hover:bg-white/5">
                       <td className={`${tdClass} font-bold max-w-48 truncate`} title={r.songTitle}>
                         {r.songTitle}
@@ -274,7 +330,7 @@ function RankingPage() {
                       </td>
                     </tr>
                   ))}
-                  {filteredRecords.length === 0 && (
+                  {sortedRecords.length === 0 && (
                     <tr>
                       <td colSpan={9} className="px-3 py-8 text-center text-white/40">
                         没有符合筛选条件的成绩

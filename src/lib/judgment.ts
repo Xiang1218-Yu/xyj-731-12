@@ -40,6 +40,56 @@ export function judgeDeviation(absDeviationMs: number): JudgmentKind | null {
   return null;
 }
 
+/** 选择判定目标时的音符最小接口（RuntimeNote / ChartNote 均满足） */
+interface JudgeableNote {
+  time: number;
+  lane: number;
+  judged: boolean;
+}
+
+/**
+ * 选择一次按键应判定的音符（按键判定目标选择策略）。
+ *
+ * 采用「同轨道最早未判定音符优先」（FIFO）策略，而不是「偏差最小优先」：
+ * 当同一轨道有多个时间接近的未判定音符时，最早的一个优先消耗本次按键，
+ * 其余音符保留给后续按键 —— 这样快速连击时每个音符都能被依次判定，
+ * 不会出现「后面的音符被提前吃掉、前面的音符反而漏判」的问题。
+ *
+ * 另外支持「同时间戳簇」：若同轨道存在多个时间戳相同（误差 ≤1ms）的音符
+ * （如编辑器制作的同轨双押），一次按键将它们一并判定，避免同轨簇必然漏一个。
+ *
+ * @param notes      运行时音符列表（必须按 time 升序）
+ * @param lane       按下的轨道
+ * @param songTimeMs 按键时刻的歌曲时间
+ * @returns 本次按键应判定的音符数组（通常 1 个，同轨簇时多个；无候选为空数组）
+ */
+export function selectJudgeTargets<T extends JudgeableNote>(
+  notes: T[],
+  lane: number,
+  songTimeMs: number,
+): T[] {
+  // 收集该轨道上仍在判定窗口内的未判定音符（输入按时间升序，结果自然升序）
+  const candidates: T[] = [];
+  for (const note of notes) {
+    if (note.judged || note.lane !== lane) continue;
+    const deviation = songTimeMs - note.time;
+    if (deviation > GOOD_WINDOW_MS) {
+      // 已超过 Good 窗口的旧音符：留给 rAF 的自动 Miss 流程处理，不用按键消耗
+      continue;
+    }
+    if (-deviation > GOOD_WINDOW_MS) {
+      // 音符按时间升序，之后的音符只会更远，提前结束遍历
+      break;
+    }
+    candidates.push(note);
+  }
+  if (candidates.length === 0) return [];
+
+  // 取时间最早的一个作为判定目标；与其同时间戳（≤1ms）的同轨音符一并返回
+  const first = candidates[0];
+  return candidates.filter((n) => Math.abs(n.time - first.time) <= 1);
+}
+
 /**
  * 连击分数加成倍率：
  * 每 1 连击 +2% 分数，50 连击封顶（最高 2 倍）。

@@ -29,12 +29,12 @@ import {
 import { audioManager } from '../lib/audio';
 import {
   BASE_SCORE,
-  GOOD_WINDOW_MS,
   MISS_WINDOW_MS,
   comboMultiplier,
   computeAccuracy,
   computeRank,
   judgeDeviation,
+  selectJudgeTargets,
   type JudgmentCounts,
   type JudgmentKind,
 } from '../lib/judgment';
@@ -303,27 +303,19 @@ export function useGameLogic() {
       lanesRef.current[lane] = true;
       setPressedLanes([...lanesRef.current]);
 
-      // 计算按键时刻的歌曲时间，寻找该轨道上偏差最小的未判定音符
+      // 计算按键时刻的歌曲时间，按「同轨道最早音符优先」策略选择判定目标。
+      // 时间接近的多个音符不会被一次按键全部吃掉：最早的一个消耗本次按键，
+      // 其余保留给后续按键（快速连击 / 双押时不会漏判）；同时间戳的同轨簇一并判定。
       const songTime = currentSongTime();
-      let best: RuntimeNote | null = null;
-      let bestAbs = Infinity;
-      for (const note of notesRef.current) {
-        if (note.judged || note.lane !== lane) continue;
-        const abs = Math.abs(songTime - note.time);
-        if (abs < bestAbs) {
-          bestAbs = abs;
-          best = note;
-        }
-        if (note.time - songTime > GOOD_WINDOW_MS) break; // 后面的音符更远，提前结束
-      }
-
-      // 偏差在 Good 窗口内才判定；空按（无候选 / 偏差过大）不惩罚
-      if (best && bestAbs <= GOOD_WINDOW_MS) {
-        const kind = judgeDeviation(bestAbs);
+      const targets = selectJudgeTargets(notesRef.current, lane, songTime);
+      for (const target of targets) {
+        const deviation = songTime - target.time;
+        const kind = judgeDeviation(Math.abs(deviation));
         if (kind) {
-          applyJudgment(best, kind, Math.round(songTime - best.time));
+          applyJudgment(target, kind, Math.round(deviation));
         }
       }
+      // 空按（无候选音符）不惩罚，只保留轨道高亮与按键音
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {

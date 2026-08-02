@@ -84,14 +84,19 @@ function SongList() {
   const builtin = songs.filter((s) => s.source === 'builtin');
   const custom = songs.filter((s) => s.source === 'custom');
 
-  /** 单个歌曲按钮（标题 + 难度） */
+  /** 单个歌曲按钮（标题 + 难度 + 「谱面」类型徽章，与经典模式关卡区分） */
   const renderSongButton = (song: SongEntry) => (
     <button
       key={song.id}
       onClick={() => void handleSongSelect(song)}
       className="bg-white text-emerald-600 border-none py-3 px-4 rounded-xl cursor-pointer transition-transform duration-100 ease-in-out hover:scale-[1.03] text-left"
     >
-      <span className="block font-bold truncate">{song.title}</span>
+      <span className="flex items-center gap-2 font-bold truncate">
+        <span className="truncate">{song.title}</span>
+        <span className="shrink-0 rounded bg-emerald-600/10 px-1.5 py-0.5 text-[10px] font-black text-emerald-700">
+          谱面
+        </span>
+      </span>
       <span className="block text-xs font-bold text-emerald-500/70">
         Lv.{song.difficulty} · {song.chart.notes.length} 音符
       </span>
@@ -175,7 +180,12 @@ function ClassicLevelList() {
           onClick={() => void handleSelect(meta, index)}
           className="bg-white text-emerald-600 font-bold border-none py-3 px-4 rounded-xl cursor-pointer transition-transform duration-100 ease-in-out hover:scale-[1.03] text-left"
         >
-          {meta.name}
+          <span className="flex items-center gap-2">
+            <span className="truncate">{meta.name}</span>
+            <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-black text-amber-700">
+              经典
+            </span>
+          </span>
         </button>
       ))}
     </div>
@@ -214,25 +224,30 @@ function LevelSelectScreen() {
 
   return (
     <section className="w-[98%] max-w-7xl p-5 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20">
-      {/* 标题 + 编辑器 / 排行榜入口（独立页面，整页跳转） */}
+      {/* 标题 + 编辑器 / 排行榜入口（独立页面，整页跳转）。
+          编辑器与排行榜仅服务于「谱面（下落模式）」，经典模式下不显示入口 */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="font-black text-4xl">Finger Dance</h1>
-        <div className="flex gap-2">
-          <a
-            href="/editor"
-            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm font-bold py-2 px-3 rounded-lg transition-colors"
-          >
-            <PencilLine size={16} />
-            谱面编辑器
-          </a>
-          <a
-            href="/ranking"
-            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm font-bold py-2 px-3 rounded-lg transition-colors"
-          >
-            <ChartColumn size={16} />
-            排行榜
-          </a>
-        </div>
+        {mode === 'rhythm' ? (
+          <div className="flex gap-2">
+            <a
+              href="/editor"
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm font-bold py-2 px-3 rounded-lg transition-colors"
+            >
+              <PencilLine size={16} />
+              谱面编辑器
+            </a>
+            <a
+              href="/ranking"
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 text-white text-sm font-bold py-2 px-3 rounded-lg transition-colors"
+            >
+              <ChartColumn size={16} />
+              排行榜
+            </a>
+          </div>
+        ) : (
+          <span className="text-xs font-bold text-white/40">经典模式不支持谱面编辑与排行榜</span>
+        )}
       </div>
 
       {/* 音阶选择（决定按键音色），保留原有功能 */}
