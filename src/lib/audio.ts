@@ -72,4 +72,24 @@ export const audioManager = {
     polySynth.releaseAll();
   },
   isInitialized: () => audioInitialized,
+  /**
+   * 节拍器滴答声（谱面编辑器预览用）。
+   * accent = true 表示每小节第 1 拍（强拍），音调更高。
+   */
+  playTick: (accent: boolean) => {
+    if (!audioInitialized) return;
+    polySynth.triggerAttackRelease(accent ? 'G6' : 'D6', '32n', Tone.now(), 0.6);
+  },
+  /**
+   * 按轨道号试听音符（谱面编辑器预览用）：
+   * 播放后立即自动释放，避免长音悬挂。
+   */
+  playLaneNote: (lane: number) => {
+    if (!audioInitialized) return;
+    const key = KEYS[lane];
+    const note = key !== undefined ? currentScale[key] : undefined;
+    if (note) {
+      polySynth.triggerAttackRelease(note, '16n', Tone.now());
+    }
+  },
 };

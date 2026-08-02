@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+/* 判定文字 / 倒计时数字的弹出动画：快速放大浮现后定格（只播放一次） */
+@keyframes ping-once {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-ping-once {
+  animation: ping-once 0.18s ease-out both;
+}

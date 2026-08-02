@@ -25,6 +25,7 @@ function App() {
   }, []);
 
   const handleBackToMenu = () => {
+    resetGameState(); // 停止对局（置为 idle，rAF 循环随之停止）
     audioManager.releaseAll();
     unlockOrientation();
     setScreen('levelSelect');
