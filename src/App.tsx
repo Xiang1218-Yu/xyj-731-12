@@ -1,73 +1,63 @@
-import { useAtom } from 'jotai';
-import { RefreshCw, Home, Maximize, Minimize } from 'lucide-react';
-import { audioManager } from './lib/audio';
-import { screenAtom } from './atoms/gameAtoms';
-import GameContainer from './components/GameContainer';
-import { useGameLogic } from './hooks/useGameLogic';
-import { useGlobalAudio } from './hooks/useGlobalAudio';
-import { useEffect, useState } from 'react';
-import TouchOverlay from './components/TouchOverlay';
-import { useScreenOrientation } from './hooks/useScreenOrientation';
-import { useFullscreen } from './hooks/useFullscreen';
+/**
+ * App —— 应用根组件（路由分发）。
+ *
+ * 路由设计（保留原有游戏，新增功能独立成页，互不干扰）：
+ *  - /        原始「指舞」游戏（关卡选择 / 游戏 / 结算，交互完全不变）；
+ *  - /rhythm  新增的下落式节奏游戏（基于谱面 Chart，带判定/评分/连击）；
+ *  - /editor  可视化谱面编辑器；
+ *  - /ranking 成绩排行榜。
+ *
+ * 启动时从 localStorage 读取用户自定义谱面，并同步浏览器前进/后退。
+ */
 
-const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+import { useEffect } from 'react';
+import { useAtomValue, useSetAtom } from 'jotai';
+import { routeAtom, syncRouteAtom } from './atoms/routeAtoms';
+import {
+  initCustomChartsAtom,
+  customChartsAtom,
+  persistCustomChartsAtom,
+} from './atoms/chartAtoms';
+import ClassicApp from './pages/ClassicApp';
+import HomePage from './pages/HomePage';
+import EditorPage from './pages/EditorPage';
+import RankingPage from './pages/RankingPage';
 
 function App() {
-  useGlobalAudio(); // Mount the global audio handler
-  const { isFullscreen, toggleFullscreen } = useFullscreen();
-  const { lockOrientation, unlockOrientation } = useScreenOrientation();
-  const [screen, setScreen] = useAtom(screenAtom);
-  const { resetGameState } = useGameLogic();
-  const [showTouchOverlay, setShowTouchOverlay] = useState(false);
+  const route = useAtomValue(routeAtom);
+  const syncRoute = useSetAtom(syncRouteAtom);
+  const initCustomCharts = useSetAtom(initCustomChartsAtom);
+  const persistCustomCharts = useSetAtom(persistCustomChartsAtom);
+  // 订阅自定义谱面变化以自动持久化
+  const customCharts = useAtomValue(customChartsAtom);
 
+  // 初始化：同步路由 + 加载本地自定义谱面
   useEffect(() => {
-    setShowTouchOverlay(isTouchDevice());
-  }, []);
+    const cleanup = syncRoute();
+    initCustomCharts();
+    return typeof cleanup === 'function' ? cleanup : undefined;
+  }, [syncRoute, initCustomCharts]);
 
-  const handleBackToMenu = () => {
-    audioManager.releaseAll();
-    unlockOrientation();
-    setScreen('levelSelect');
-  };
+  // 自定义谱面变化时自动持久化
+  useEffect(() => {
+    persistCustomCharts();
+  }, [customCharts, persistCustomCharts]);
 
-  const handleToggleFullscreen = () => {
-    toggleFullscreen();
-    lockOrientation('landscape');
-  };
+  let page;
+  if (route === '/editor') {
+    page = <EditorPage />;
+  } else if (route === '/ranking') {
+    page = <RankingPage />;
+  } else if (route === '/rhythm') {
+    page = <HomePage />;
+  } else {
+    // / —— 原始游戏，页面与交互保持不变
+    page = <ClassicApp />;
+  }
 
   return (
-    <div
-      className={`font-sans flex justify-center items-center bg-emerald-500 text-white overflow-hidden select-none relative ${
-        isFullscreen ? 'h-screen w-screen' : 'h-svh w-svw'
-      }`}
-    >
-      {screen === 'game' && showTouchOverlay && <TouchOverlay />}
-      {screen === 'game' && (
-        <div className="absolute top-4 right-4 flex items-center gap-4 z-20">
-          <button
-            onClick={handleToggleFullscreen}
-            className="p-2 text-white/50 hover:text-white transition-colors cursor-pointer"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-          >
-            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-          </button>
-          <button
-            onClick={resetGameState}
-            className="p-2 text-white/50 hover:text-white transition-colors cursor-pointer"
-            title="Restart Level"
-          >
-            <RefreshCw size={20} />
-          </button>
-          <button
-            onClick={handleBackToMenu}
-            className="p-2 text-white/50 hover:text-white transition-colors cursor-pointer"
-            title="Back to Menu"
-          >
-            <Home size={20} />
-          </button>
-        </div>
-      )}
-      <GameContainer />
+    <div className="font-sans min-h-svh w-full bg-slate-950 text-white">
+      {page}
     </div>
   );
 }

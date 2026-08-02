@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+/* 判定弹出文字动画 */
+@keyframes judgePop {
+  0% {
+    transform: scale(0.6) translateY(6px);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.2) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(-10px);
+    opacity: 0;
+  }
+}
+
+/* 排行榜评级的简单发光 */
+@keyframes rankGlow {
+  0%, 100% { text-shadow: 0 0 8px rgba(255, 255, 255, 0.4); }
+  50% { text-shadow: 0 0 20px rgba(255, 255, 255, 0.8); }
+}
