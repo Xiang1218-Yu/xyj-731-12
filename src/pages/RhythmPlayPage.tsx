@@ -183,13 +183,13 @@ function PlayField({
       )}
 
       {/* 轨道容器 */}
-      <div className="flex-1 flex justify-center">
-        <div className="relative flex gap-1 h-full" style={{ width: 'min(900px, 95%)' }}>
+      <div className="flex-1 flex justify-center px-2">
+        <div className="relative flex gap-1.5 h-full w-full" style={{ maxWidth: 'min(1400px, 98vw)' }}>
           {Array.from({ length: TRACK_COUNT }).map((_, track) => (
             <div
               key={track}
-              className={`relative flex-1 border-x border-white/5 ${
-                track === 4 ? 'bg-white/[0.03]' : ''
+              className={`relative flex-1 rounded-sm border-x border-white/5 ${
+                track === 4 ? 'bg-white/[0.05]' : 'bg-white/[0.02]'
               }`}
             >
               {/* 该轨道内的下落音符 */}
@@ -202,8 +202,8 @@ function PlayField({
                     style={{
                       // 用 progress 定位：0% 在顶部，95% 在判定线附近。
                       top: `${v.progress * 92}%`,
-                      width: track === 4 ? '90%' : '70%',
-                      height: '18px',
+                      width: '86%',
+                      height: '22px',
                     }}
                   />
                 ))}
@@ -216,8 +216,8 @@ function PlayField({
       </div>
 
       {/* 底部键位标签 */}
-      <div className="flex justify-center pb-4">
-        <div className="flex gap-1" style={{ width: 'min(900px, 95%)' }}>
+      <div className="flex justify-center px-2 pb-4">
+        <div className="flex gap-1.5 w-full" style={{ maxWidth: 'min(1400px, 98vw)' }}>
           {KEY_LABELS.map((label, i) => (
             <div
               key={i}

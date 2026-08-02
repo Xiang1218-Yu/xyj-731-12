@@ -40,18 +40,34 @@ export default function RankingPage() {
   const [sortKey, setSortKey] = useState<SortKey>('score');
   const [sortDesc, setSortDesc] = useState(true);
 
+  /**
+   * "清空全部"防误触保护：
+   * 除了点击按钮，还需在弹出的确认框内手动输入指定词语（"清空"）才可执行，
+   * 避免误触/连点直接清空全部数据。
+   */
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
+  /** 需要用户精确输入的确认词。 */
+  const CLEAR_KEYWORD = '清空';
+
   /** 删除单条成绩。 */
   const handleDelete = (id: string) => {
     setRecords(deleteScore(id));
   };
 
-  /** 清空全部成绩。 */
-  const handleClearAll = () => {
+  /** 打开"清空全部"确认弹窗。 */
+  const openClearModal = () => {
     if (records.length === 0) return;
-    if (confirm('确定清空全部成绩记录？此操作不可撤销。')) {
-      clearScores();
-      setRecords([]);
-    }
+    setClearConfirmText('');
+    setShowClearModal(true);
+  };
+
+  /** 在确认弹窗中输入正确关键词后真正执行清空。 */
+  const confirmClearAll = () => {
+    if (clearConfirmText.trim() !== CLEAR_KEYWORD) return;
+    clearScores();
+    setRecords([]);
+    setShowClearModal(false);
   };
 
   // 应用筛选 + 排序，并按"歌曲 + 难度"分组。
@@ -103,8 +119,9 @@ export default function RankingPage() {
           <h1 className="text-lg font-bold">排行榜</h1>
         </div>
         <button
-          onClick={handleClearAll}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-rose-500/80 hover:bg-rose-500"
+          onClick={openClearModal}
+          disabled={records.length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-rose-500/80 hover:bg-rose-500 disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Trash2 size={16} />
           清空全部
@@ -214,6 +231,46 @@ export default function RankingPage() {
           </section>
         ))}
       </main>
+
+      {/* "清空全部"二次确认弹窗：需输入关键词才可执行，防止误触。 */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm border border-white/10">
+            <h3 className="text-lg font-bold mb-2 text-rose-300">清空全部成绩</h3>
+            <p className="text-sm text-white/70 mb-4 leading-relaxed">
+              此操作将删除全部 <span className="font-bold text-white">{records.length}</span> 条成绩记录，
+              <span className="text-rose-300">不可撤销</span>。<br />
+              如需继续，请在下方输入「<span className="font-bold text-white">{CLEAR_KEYWORD}</span>」以确认。
+            </p>
+            <input
+              autoFocus
+              className="editor-input mb-4"
+              placeholder={`输入「${CLEAR_KEYWORD}」`}
+              value={clearConfirmText}
+              onChange={(e) => setClearConfirmText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmClearAll();
+                if (e.key === 'Escape') setShowClearModal(false);
+              }}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowClearModal(false)}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-white/10 hover:bg-white/20"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmClearAll}
+                disabled={clearConfirmText.trim() !== CLEAR_KEYWORD}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-rose-500 hover:bg-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                确认清空
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
