@@ -1,4 +1,6 @@
 import { Suspense, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Pencil, Trophy } from 'lucide-react';
 import { useAtom, useSetAtom, useAtomValue } from 'jotai';
 import {
   screenAtom,
@@ -63,6 +65,7 @@ function LevelList() {
 
 function LevelSelectScreen() {
   useMenuKeyboard(); // Enable keyboard sounds on this screen
+  const navigate = useNavigate();
   const [currentScale, setCurrentScale] = useAtom(scaleAtom);
   const [customScaleInput, setCustomScaleInput] = useState('C2 D2 E2 G2 A2 C3 D3 E3 G3');
   const [showCustomInput, setShowCustomInput] = useState(false);
@@ -93,6 +96,24 @@ function LevelSelectScreen() {
   return (
     <section className="w-[90%] max-w-3xl p-5 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20">
       <h1 className="text-center font-black text-4xl mb-6">Finger Dance</h1>
+
+      {/* 节奏模式入口：谱面编辑器与排行榜（新增功能） */}
+      <div className="flex justify-center gap-3 mb-6">
+        <button
+          onClick={() => navigate('/editor')}
+          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+        >
+          <Pencil size={18} />
+          谱面编辑器
+        </button>
+        <button
+          onClick={() => navigate('/ranking')}
+          className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+        >
+          <Trophy size={18} />
+          排行榜
+        </button>
+      </div>
       
       <div className="mb-6">
         <label className="block text-sm font-bold mb-3 text-center">

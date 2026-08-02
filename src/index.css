@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+/*
+ * 谱面编辑器左侧面板的输入控件统一样式。
+ * 用 @layer components 让其可被 Tailwind 工具类覆盖。
+ */
+@layer components {
+  .editor-input {
+    width: 100%;
+    border-radius: 0.375rem;
+    background-color: rgb(255 255 255 / 0.1);
+    padding: 0.375rem 0.5rem;
+    font-size: 0.875rem;
+    color: white;
+    outline: none;
+  }
+  .editor-input:focus {
+    background-color: rgb(255 255 255 / 0.15);
+  }
+  .editor-input option {
+    color: black;
+  }
+}
