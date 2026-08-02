@@ -1123,18 +1123,18 @@ export default function EditorScreen() {
                 />
               ))}
 
-              {/* 9 条轨道（仅用于点击区域和标签，不包含音符） */}
-              <div className="absolute inset-0 flex z-0">
+              {/* 9 条轨道（水平行排列：时间在X轴，轨道在Y轴） */}
+              <div className="absolute inset-0 flex flex-col z-0">
                 {LANE_LABELS.map((label, laneIndex) => (
                   <div
                     key={laneIndex}
-                    className={`flex-1 border-r border-slate-700/50 last:border-r-0 relative transition-colors ${LANE_HOVER_COLORS[laneIndex]} ${
+                    className={`flex-1 border-b border-slate-700/50 last:border-b-0 relative transition-colors ${LANE_HOVER_COLORS[laneIndex]} ${
                       dragState.kind === 'paint' ? 'cursor-crosshair' : 'cursor-pointer'
                     }`}
                     onMouseDown={(e) => handleLaneMouseDown(e, laneIndex)}
                   >
-                    {/* 轨道标签（固定在左侧，不随横向滚动） */}
-                    <div className="sticky left-0 top-0 z-20 bg-slate-800/90 px-2 py-1 text-xs font-bold text-slate-400 border-b border-slate-700 flex items-center gap-1">
+                    {/* 轨道标签（横向滚动时固定在左侧） */}
+                    <div className="sticky left-0 z-20 h-full w-fit bg-slate-800/90 px-2 text-xs font-bold text-slate-400 flex items-center gap-1 pointer-events-none">
                       <GripVertical size={10} className="opacity-50" />
                       {label}
                     </div>
