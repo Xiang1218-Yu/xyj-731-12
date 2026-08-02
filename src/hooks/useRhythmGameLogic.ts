@@ -103,6 +103,8 @@ export function useRhythmGameLogic() {
   const judgedNoteIdsRef = useRef<Set<string>>(new Set());
   // 游戏循环引用
   const animationFrameRef = useRef<number | null>(null);
+  // 取消标志：当游戏被中断（如返回编辑器/菜单）时设为 true，防止 endGame 竞态覆盖屏幕状态
+  const cancelledRef = useRef(false);
   // 状态 ref，供事件处理函数访问最新值
   const stateRef = useRef({
     currentChart,
@@ -200,7 +202,9 @@ export function useRhythmGameLogic() {
       : 5000;
 
     if (currentTime >= gameEndTime && judgedNoteIdsRef.current.size >= notes.length) {
-      endGame(currentTime);
+      if (!cancelledRef.current) {
+        endGame(currentTime);
+      }
       return;
     }
 
@@ -212,6 +216,8 @@ export function useRhythmGameLogic() {
    */
   const endGame = useCallback(
     (playDuration: number) => {
+      if (cancelledRef.current) return;
+
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -255,6 +261,7 @@ export function useRhythmGameLogic() {
     audioManager.releaseAll();
     pressedKeys.current.clear();
     judgedNoteIdsRef.current.clear();
+    cancelledRef.current = false;
     setPlayerState([0, 0, 0, 0, 0, 0, 0, 0, 0]);
     setStartTime(0);
     resetStats();
@@ -398,6 +405,7 @@ export function useRhythmGameLogic() {
       });
 
       return () => {
+        cancelledRef.current = true;
         window.clearTimeout(startTimeout);
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);

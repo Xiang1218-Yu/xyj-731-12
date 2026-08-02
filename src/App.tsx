@@ -5,6 +5,9 @@ import {
   screenAtom,
   currentChartAtom,
   cameFromEditorAtom,
+  playerStateAtom,
+  startTimeAtom,
+  resetGameStatsAtom,
 } from './atoms/gameAtoms';
 import GameContainer from './components/GameContainer';
 import { useGameLogic } from './hooks/useGameLogic';
@@ -36,6 +39,9 @@ function App() {
   const cameFromEditor = useAtomValue(cameFromEditorAtom);
   const setCameFromEditor = useSetAtom(cameFromEditorAtom);
   const setCurrentChart = useSetAtom(currentChartAtom);
+  const setPlayerState = useSetAtom(playerStateAtom);
+  const setStartTime = useSetAtom(startTimeAtom);
+  const resetStats = useSetAtom(resetGameStatsAtom);
   const { resetGameState: resetClassicGame } = useGameLogic();
 
   useEffect(() => {
@@ -50,6 +56,9 @@ function App() {
     audioManager.releaseAll();
     unlockOrientation();
     resetClassicGame();
+    setPlayerState([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    setStartTime(0);
+    resetStats();
     setCurrentChart(null);
     setCameFromEditor(false);
     setScreen('levelSelect');
@@ -62,7 +71,9 @@ function App() {
   const handleBackToEditor = () => {
     audioManager.releaseAll();
     unlockOrientation();
-    // 清空当前游戏谱面引用（编辑器中保留原始数据）
+    setPlayerState([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    setStartTime(0);
+    resetStats();
     setCurrentChart(null);
     setCameFromEditor(false);
     setScreen('editor');
@@ -140,7 +151,7 @@ function App() {
           >
             <Home size={20} />
           </button>
-       <[CLS_never_used_51bce0c785ca2f68081bfa7d91973934]></div>
+        </div>
       )}
 
       <GameContainer />

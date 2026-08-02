@@ -25,6 +25,8 @@ import {
   ZoomOut,
   Music,
   GripVertical,
+  Save,
+  FolderOpen,
 } from 'lucide-react';
 import {
   screenAtom,
@@ -40,6 +42,7 @@ import {
 import type { Chart, Note } from '../types/chart';
 import { generateId } from '../types/chart';
 import { audioManager } from '../lib/audio';
+import { saveCustomChart, loadCustomCharts, deleteCustomChart, type StoredChart } from '../lib/customCharts';
 
 // 9 个轨道对应的按键标签（与游戏内一致）
 const LANE_LABELS = ['A', 'S', 'D', 'F', 'SPACE', 'J', 'K', 'L', ';'];
@@ -123,6 +126,14 @@ export default function EditorScreen() {
   const [, setCurrentChart] = useAtom(currentChartAtom);
   const [, setCameFromEditor] = useAtom(cameFromEditorAtom);
 
+  // --- 自定义谱面保存状态 ---
+  // 当前正在编辑的谱面在 localStorage 中的 id（新谱面为 null）
+  const [savedChartId, setSavedChartId] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string>('');
+  // 已保存谱面列表
+  const [savedCharts, setSavedCharts] = useState<StoredChart[]>([]);
+  const [showSavedList, setShowSavedList] = useState(false);
+
   // --- DOM 引用 ---
   const timelineRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -190,12 +201,14 @@ export default function EditorScreen() {
 
   /**
    * 在指定时间和轨道添加音符
-   * 如果同一网格位置已有音符则删除（切换效果）
+   * 如果同一网格位置已有音符，则不执行任何操作（避免重复）
+   * 返回是否成功添加
    */
-  const toggleNoteAt = useCallback(
-    (time: number, lane: number) => {
-      if (time < 0) return;
+  const addNoteAt = useCallback(
+    (time: number, lane: number): boolean => {
+      if (time < 0) return false;
 
+      let added = false;
       setChart((prev) => {
         // 查找同一网格位置附近是否已有音符
         const tolerance = beatDuration * gridSnap * 0.5;
@@ -204,14 +217,11 @@ export default function EditorScreen() {
         );
 
         if (existing) {
-          // 已有音符：删除它
-          return {
-            ...prev,
-            notes: prev.notes.filter((n) => n.id !== existing.id),
-          };
+          // 已有音符：不重复添加
+          return prev;
         }
 
-        // 没有音符：添加新音符
+        added = true;
         const newNote: Note = {
           id: generateId(),
           time,
@@ -223,8 +233,22 @@ export default function EditorScreen() {
           notes: [...prev.notes, newNote].sort((a, b) => a.time - b.time),
         };
       });
+      return added;
     },
     [setChart, beatDuration, gridSnap],
+  );
+
+  /**
+   * 删除指定音符
+   */
+  const removeNote = useCallback(
+    (noteId: string) => {
+      setChart((prev) => ({
+        ...prev,
+        notes: prev.notes.filter((n) => n.id !== noteId),
+      }));
+    },
+    [setChart],
   );
 
   /**
@@ -326,7 +350,7 @@ export default function EditorScreen() {
           // 确认为拖拽：在起始位置添加音符，进入 paint 模式
           const time = xToTime(dragState.startX);
           const lane = dragState.lane;
-          toggleNoteAt(time, lane);
+          addNoteAt(time, lane);
           setDragState({
             kind: 'paint',
             lastTime: time,
@@ -342,12 +366,7 @@ export default function EditorScreen() {
         const timeChanged = Math.abs(time - dragState.lastTime) >= tolerance * 0.8;
         const laneChanged = lane !== dragState.lastLane;
         if (timeChanged || laneChanged) {
-          const exists = notes.some(
-            (n) => n.lane === lane && Math.abs(n.time - time) < tolerance,
-          );
-          if (!exists && time >= 0) {
-            toggleNoteAt(time, lane);
-          }
+          addNoteAt(time, lane);
           setDragState({
             kind: 'paint',
             lastTime: time,
@@ -378,8 +397,7 @@ export default function EditorScreen() {
       timeToX,
       beatDuration,
       gridSnap,
-      notes,
-      toggleNoteAt,
+      addNoteAt,
     ],
   );
 
@@ -389,10 +407,10 @@ export default function EditorScreen() {
   const handleTimelineMouseUp = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (dragState.kind === 'pending-click') {
-        // 待定点击状态下松开：判定为单击，toggle 音符
+        // 待定点击状态下松开且未移动：判定为单击，在 mousedown 的位置添加音符
+        // 使用 mousedown 时记录的轨道，避免鼠标微小移动导致轨道偏移
         const time = xToTime(e.clientX);
-        const lane = yToLane(e.clientY);
-        toggleNoteAt(time, lane);
+        addNoteAt(time, dragState.lane);
       } else if (dragState.kind === 'move-note') {
         if (dragState.moved) {
           // 真正发生了拖拽：提交新位置
@@ -407,22 +425,16 @@ export default function EditorScreen() {
       setDragState({ kind: 'none' });
       setDragPreview(null);
     },
-    [dragState, xToTime, yToLane, toggleNoteAt, moveNote],
+    [dragState, xToTime, yToLane, addNoteAt, moveNote],
   );
 
   /**
    * 鼠标离开时间轴区域：取消待定/拖拽状态
    */
   const handleTimelineMouseLeave = useCallback(() => {
-    // 如果正在 paint，离开时保留已添加的音符，只清除状态
-    // 如果是 pending-click 且未添加音符，直接取消
-    // 如果是 move-note 且已移动，提交到当前位置（由全局 mouseup 处理更安全）
-    if (dragState.kind === 'move-note' && dragState.moved) {
-      // 不在这里处理，全局 mouseup 会处理
-    }
     setDragState({ kind: 'none' });
     setDragPreview(null);
-  }, [dragState.kind, dragState.moved]);
+  }, []);
 
   // ============================================================
   // 元数据编辑
@@ -645,6 +657,48 @@ export default function EditorScreen() {
     setScreen('game');
   }, [chart, notes.length, setCurrentChart, setCameFromEditor, setScreen]);
 
+  /**
+   * 保存当前谱面到 localStorage（首页可直接游玩）
+   * 如果是已保存过的谱面则更新，否则新建
+   */
+  const handleSave = useCallback(() => {
+    if (notes.length === 0) {
+      alert('谱面为空，无法保存');
+      return;
+    }
+    const saved = saveCustomChart(chart, savedChartId || undefined);
+    setSavedChartId(saved.id);
+    setSavedCharts(loadCustomCharts());
+    setSaveMessage('已保存 ✓');
+    // 2 秒后清除提示
+    window.setTimeout(() => setSaveMessage(''), 2000);
+  }, [chart, notes.length, savedChartId]);
+
+  /**
+   * 加载一个已保存的自定义谱面到编辑器
+   */
+  const handleLoadChart = useCallback((stored: StoredChart) => {
+    setChart(stored.chart);
+    setSavedChartId(stored.id);
+    setShowSavedList(false);
+  }, [setChart]);
+
+  /**
+   * 删除一个已保存的自定义谱面
+   */
+  const handleDeleteSaved = useCallback((id: string) => {
+    if (confirm('确定删除这个已保存的谱面吗？')) {
+      deleteCustomChart(id);
+      setSavedCharts(loadCustomCharts());
+      if (savedChartId === id) setSavedChartId(null);
+    }
+  }, [savedChartId]);
+
+  // 组件挂载时加载已保存谱面列表
+  useEffect(() => {
+    setSavedCharts(loadCustomCharts());
+  }, []);
+
   // ============================================================
   // 布局计算
   // ============================================================
@@ -749,6 +803,70 @@ export default function EditorScreen() {
           >
             测试游玩
           </button>
+          <div className="w-px h-6 bg-slate-600 mx-1" />
+          {/* 保存和打开 */}
+          <div className="relative">
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 transition-colors text-sm font-medium"
+            >
+              <Save size={16} />
+              保存
+            </button>
+            {saveMessage && (
+              <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-emerald-400 whitespace-nowrap">
+                {saveMessage}
+              </span>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => {
+                setSavedCharts(loadCustomCharts());
+                setShowSavedList((v) => !v);
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 transition-colors text-sm"
+            >
+              <FolderOpen size={16} />
+              打开
+            </button>
+            {/* 已保存谱面下拉列表 */}
+            {showSavedList && (
+              <div className="absolute right-0 top-full mt-1 w-72 max-h-64 overflow-auto bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50">
+                {savedCharts.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-slate-500">
+                    暂无已保存的谱面
+                  </div>
+                ) : (
+                  savedCharts.map((sc) => (
+                    <div
+                      key={sc.id}
+                      className="flex items-center justify-between px-3 py-2 hover:bg-slate-700 cursor-pointer group"
+                      onClick={() => handleLoadChart(sc)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">
+                          {sc.chart.metadata.title}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {sc.chart.metadata.difficulty} · {sc.chart.notes.length} 音符
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSaved(sc.id);
+                        }}
+                        className="p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <div className="w-px h-6 bg-slate-600 mx-1" />
           {/* 文件操作 */}
           <input
@@ -1049,10 +1167,7 @@ export default function EditorScreen() {
                       onDoubleClick={(e) => {
                         e.stopPropagation();
                         // 双击删除音符
-                        setChart((prev) => ({
-                          ...prev,
-                          notes: prev.notes.filter((n) => n.id !== note.id),
-                        }));
+                        if (note.id) removeNote(note.id);
                         setSelectedNoteId(null);
                       }}
                       title={`时间: ${(note.time / 1000).toFixed(2)}s | 拖拽移动 | 双击删除`}
