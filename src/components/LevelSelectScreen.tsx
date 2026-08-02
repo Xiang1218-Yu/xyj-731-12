@@ -1,6 +1,6 @@
 import { Suspense, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Pencil, Trophy } from 'lucide-react';
+import { Pencil, Trophy, Play, Trash2 } from 'lucide-react';
 import { useAtom, useSetAtom, useAtomValue } from 'jotai';
 import {
   screenAtom,
@@ -13,6 +13,8 @@ import {
   currentStepAtom,
   startTimeAtom,
 } from '../atoms/gameAtoms';
+import { playChartAtom, editorChartAtom } from '../atoms/rhythmAtoms';
+import { loadSavedCharts, deleteSavedChart, type SavedChart } from '../lib/chartUtils';
 import { audioManager, scales, type ScaleName } from '../lib/audio';
 import { useMenuKeyboard } from '../hooks/useMenuKeyboard';
 import { useFullscreen } from '../hooks/useFullscreen';
@@ -63,6 +65,74 @@ function LevelList() {
   );
 }
 
+/**
+ * "我的谱面"列表：展示保存到本地的自制谱面，可直接游玩（进入节奏模式）或删除。
+ * 从 localStorage 读取，保存后返回首页即可看到。
+ */
+function SavedChartsList() {
+  const navigate = useNavigate();
+  const setPlayChart = useSetAtom(playChartAtom);
+  const setEditorChart = useSetAtom(editorChartAtom);
+  const [charts, setCharts] = useState<SavedChart[]>(() => loadSavedCharts());
+
+  // 游玩某个已保存谱面：写入待游玩 atom 并进入 /play。
+  // 注意清空 editorChart，使 /play 不显示"返回编辑器"（此次并非来自编辑器）。
+  const handlePlay = (entry: SavedChart) => {
+    setEditorChart(null);
+    setPlayChart(entry.chart);
+    navigate('/play');
+  };
+
+  const handleDelete = (id: string) => {
+    setCharts(deleteSavedChart(id));
+  };
+
+  if (charts.length === 0) {
+    return (
+      <div className="text-center text-white/50 text-sm py-4 border-t border-white/20">
+        还没有自制谱面。点击上方「谱面编辑器」创建并保存吧！
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-white/20 pt-4">
+      <h2 className="text-sm font-bold mb-3 text-center">我的谱面（自制）</h2>
+      <div className="flex flex-col gap-2">
+        {charts.map((entry) => (
+          <div
+            key={entry.id}
+            className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-3"
+          >
+            <div className="grow min-w-0">
+              <div className="font-bold truncate">{entry.chart.metadata.title}</div>
+              <div className="text-xs text-white/60">
+                {entry.chart.metadata.difficulty} · {entry.chart.metadata.bpm} BPM ·{' '}
+                {entry.chart.notes.length} 音符
+              </div>
+            </div>
+            <button
+              onClick={() => handlePlay(entry)}
+              className="flex items-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm py-1.5 px-3 rounded-lg shrink-0"
+              title="游玩"
+            >
+              <Play size={16} />
+              游玩
+            </button>
+            <button
+              onClick={() => handleDelete(entry.id)}
+              className="p-2 text-white/50 hover:text-rose-300 shrink-0"
+              title="删除"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LevelSelectScreen() {
   useMenuKeyboard(); // Enable keyboard sounds on this screen
   const navigate = useNavigate();
@@ -94,7 +164,7 @@ function LevelSelectScreen() {
   }
 
   return (
-    <section className="w-[90%] max-w-3xl p-5 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20">
+    <section className="w-[90%] max-w-3xl max-h-[92svh] overflow-y-auto p-5 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20">
       <h1 className="text-center font-black text-4xl mb-6">Finger Dance</h1>
 
       {/* 节奏模式入口：谱面编辑器与排行榜（新增功能） */}
@@ -166,6 +236,11 @@ function LevelSelectScreen() {
       <Suspense fallback={<div className="text-center p-8">Loading levels...</div>}>
         <LevelList />
       </Suspense>
+
+      {/* 我的谱面（自制，保存到本地后在此展示，可直接游玩） */}
+      <div className="mt-4">
+        <SavedChartsList />
+      </div>
     </section>
   );
 }

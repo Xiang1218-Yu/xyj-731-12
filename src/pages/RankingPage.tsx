@@ -185,51 +185,71 @@ export default function RankingPage() {
           </div>
         )}
 
-        {groups.map((group) => (
-          <section key={`${group.song}-${group.difficulty}`} className="bg-black/20 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-white/5">
-              <h2 className="font-bold">
-                {group.song}
-                <span className="ml-2 text-xs px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-200">
-                  {group.difficulty}
-                </span>
-              </h2>
-              <span className="text-xs text-white/50">{group.items.length} 条记录</span>
-            </div>
-
-            {/* 表头 */}
-            <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-4 py-2 text-xs text-white/40 border-b border-white/10">
-              <span>#</span>
-              <span>评级</span>
-              <span>分数</span>
-              <span>准确率</span>
-              <span>最大连击</span>
-              <span>日期</span>
-              <span></span>
-            </div>
-
-            {group.items.map((r, i) => (
-              <div
-                key={r.id}
-                className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-4 py-2 items-center text-sm border-b border-white/5 hover:bg-white/5"
-              >
-                <span className="text-white/40 w-6">{i + 1}</span>
-                <span className={`font-black ${GRADE_COLOR[r.grade]}`}>{r.grade}</span>
-                <span className="font-bold tabular-nums">{r.score.toLocaleString()}</span>
-                <span className="tabular-nums">{r.accuracy.toFixed(2)}%</span>
-                <span className="tabular-nums">{r.maxCombo}</span>
-                <span className="text-white/60 text-xs">{new Date(r.date).toLocaleString()}</span>
-                <button
-                  onClick={() => handleDelete(r.id)}
-                  className="p-1 text-white/40 hover:text-rose-400"
-                  title="删除此记录"
-                >
-                  <X size={16} />
-                </button>
+        {groups.map((group) => {
+          // 该组的最佳成绩（最高分记录），用于突出展示"最佳得分"。
+          const best = group.items.reduce((a, b) => (b.score > a.score ? b : a));
+          return (
+            <section key={`${group.song}-${group.difficulty}`} className="bg-black/20 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-white/5 gap-2">
+                <h2 className="font-bold min-w-0 truncate">
+                  {group.song}
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-200">
+                    {group.difficulty}
+                  </span>
+                </h2>
+                {/* 最佳得分徽标 */}
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] tracking-widest text-white/40">最佳得分</span>
+                    <span className="flex items-baseline gap-1">
+                      <span className={`text-sm font-black ${GRADE_COLOR[best.grade]}`}>{best.grade}</span>
+                      <span className="text-lg font-black tabular-nums text-yellow-300">
+                        {best.score.toLocaleString()}
+                      </span>
+                    </span>
+                  </div>
+                  <span className="text-xs text-white/50">{group.items.length} 条</span>
+                </div>
               </div>
-            ))}
-          </section>
-        ))}
+
+              {/* 表头 */}
+              <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-4 py-2 text-xs text-white/40 border-b border-white/10">
+                <span>#</span>
+                <span>评级</span>
+                <span>分数</span>
+                <span>准确率</span>
+                <span>最大连击</span>
+                <span>日期</span>
+                <span></span>
+              </div>
+
+              {group.items.map((r, i) => (
+                <div
+                  key={r.id}
+                  className={`grid grid-cols-[auto_1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-4 py-2 items-center text-sm border-b border-white/5 hover:bg-white/5 ${
+                    r.id === best.id ? 'bg-yellow-400/10' : ''
+                  }`}
+                >
+                  <span className="text-white/40 w-6">
+                    {r.id === best.id ? '👑' : i + 1}
+                  </span>
+                  <span className={`font-black ${GRADE_COLOR[r.grade]}`}>{r.grade}</span>
+                  <span className="font-bold tabular-nums">{r.score.toLocaleString()}</span>
+                  <span className="tabular-nums">{r.accuracy.toFixed(2)}%</span>
+                  <span className="tabular-nums">{r.maxCombo}</span>
+                  <span className="text-white/60 text-xs">{new Date(r.date).toLocaleString()}</span>
+                  <button
+                    onClick={() => handleDelete(r.id)}
+                    className="p-1 text-white/40 hover:text-rose-400"
+                    title="删除此记录"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </section>
+          );
+        })}
       </main>
 
       {/* "清空全部"二次确认弹窗：需输入关键词才可执行，防止误触。 */}

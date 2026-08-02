@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useNavigate } from 'react-router-dom';
-import { Home } from 'lucide-react';
-import { playChartAtom, liveStatsAtom } from '../atoms/rhythmAtoms';
+import { Home, Pencil } from 'lucide-react';
+import { playChartAtom, liveStatsAtom, editorChartAtom } from '../atoms/rhythmAtoms';
 import { useRhythmEngine, type FinishResult } from '../hooks/useRhythmEngine';
 import { TRACK_COUNT, type Judgement } from '../types/chart';
 import { JUDGEMENT_STYLE, calcAccuracy } from '../lib/judgement';
@@ -25,6 +25,9 @@ const KEY_LABELS = ['A', 'S', 'D', 'F', 'SPACE', 'J', 'K', 'L', ';'];
 export default function RhythmPlayPage() {
   const navigate = useNavigate();
   const chart = useAtomValue(playChartAtom);
+  /** 编辑器保留的谱面：非空说明本次预览来自编辑器，可提供"返回编辑器"入口。 */
+  const editorChart = useAtomValue(editorChartAtom);
+  const cameFromEditor = editorChart !== null;
   const [result, setResult] = useState<FinishResult | null>(null);
 
   // 结束回调：保存成绩到 localStorage，并切换到结算界面。
@@ -94,13 +97,25 @@ export default function RhythmPlayPage() {
           <Stat label="COMBO" value={stats.combo.toString()} />
           <Stat label="ACC" value={`${liveAccuracy.toFixed(2)}%`} />
         </div>
-        <button
-          onClick={() => navigate('/')}
-          className="p-2 text-white/60 hover:text-white"
-          title="返回主页"
-        >
-          <Home size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          {cameFromEditor && (
+            <button
+              onClick={() => navigate('/editor')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold bg-white/10 hover:bg-white/20"
+              title="返回编辑器"
+            >
+              <Pencil size={16} />
+              返回编辑器
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 text-white/60 hover:text-white"
+            title="返回主页"
+          >
+            <Home size={20} />
+          </button>
+        </div>
       </header>
 
       {/* 游玩区域 */}
@@ -125,7 +140,13 @@ export default function RhythmPlayPage() {
         {engine.phase === 'playing' && <PlayField engine={engine} lastJudgement={stats.lastJudgement} lastAt={stats.lastJudgementAt} combo={stats.combo} />}
 
         {engine.phase === 'finished' && result && (
-          <ResultOverlay result={result} onRetry={engine.start} onExit={() => navigate('/')} onRanking={() => navigate('/ranking')} />
+          <ResultOverlay
+            result={result}
+            onRetry={engine.start}
+            onExit={() => navigate('/')}
+            onRanking={() => navigate('/ranking')}
+            onEditor={cameFromEditor ? () => navigate('/editor') : undefined}
+          />
         )}
       </main>
     </div>
@@ -240,11 +261,14 @@ function ResultOverlay({
   onRetry,
   onExit,
   onRanking,
+  onEditor,
 }: {
   result: FinishResult;
   onRetry: () => void;
   onExit: () => void;
   onRanking: () => void;
+  /** 来自编辑器时提供，用于"返回编辑器"。 */
+  onEditor?: () => void;
 }) {
   const gradeColor: Record<string, string> = {
     S: 'text-yellow-300',
@@ -271,10 +295,15 @@ function ResultOverlay({
           <Row label="Miss" value={result.miss.toString()} valueClass="text-rose-400" />
           <Row label="用时" value={`${(result.playTime / 1000).toFixed(1)}s`} />
         </div>
-        <div className="flex gap-3 justify-center">
+        <div className="flex flex-wrap gap-3 justify-center">
           <button onClick={onRetry} className="bg-emerald-500 px-5 py-2 rounded-lg font-bold hover:bg-emerald-600">
             重玩
           </button>
+          {onEditor && (
+            <button onClick={onEditor} className="bg-white/10 px-5 py-2 rounded-lg font-bold hover:bg-white/20">
+              返回编辑器
+            </button>
+          )}
           <button onClick={onRanking} className="bg-white/10 px-5 py-2 rounded-lg font-bold hover:bg-white/20">
             排行榜
           </button>

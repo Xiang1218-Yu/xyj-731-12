@@ -12,10 +12,10 @@ import { useCallback, useRef, useState } from 'react';
  * 为避免连续微小改动（例如拖拽过程中每帧都变化）产生过多历史项，
  * set 支持 `coalesce` 选项：为 true 时不新增历史项，只替换当前 present。
  *
- * @param initial 初始值
+ * @param initial 初始值，或返回初始值的惰性初始化函数（仅首次挂载求值一次）
  * @param limit   历史最大深度（防止内存无限增长），默认 100
  */
-export function useHistory<T>(initial: T, limit = 100) {
+export function useHistory<T>(initial: T | (() => T), limit = 100) {
   const [present, setPresent] = useState<T>(initial);
   // past/future 用 ref 存储，避免每次修改都触发额外渲染；
   // canUndo/canRedo 用独立 state 暴露给 UI。

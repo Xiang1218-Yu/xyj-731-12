@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSetAtom } from 'jotai';
+import { useAtom, useSetAtom } from 'jotai';
 import { useNavigate } from 'react-router-dom';
-import { Home, Download, Upload, Play, Trash2, Wand2, Undo2, Redo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Home, Download, Upload, Play, Trash2, Wand2, Undo2, Redo2, ZoomIn, ZoomOut, Save, FilePlus } from 'lucide-react';
 import type { Chart, DifficultyLevel } from '../types/chart';
 import { TRACK_COUNT, DIFFICULTY_LEVELS } from '../types/chart';
 import {
@@ -11,38 +11,50 @@ import {
   validateChart,
   serializeChart,
   generateNotesByDensity,
+  saveEditorDraft,
+  saveChartToLibrary,
 } from '../lib/chartUtils';
 import { useHistory } from '../hooks/useHistory';
-import { playChartAtom } from '../atoms/rhythmAtoms';
+import { playChartAtom, editorChartAtom, editorResumeAtom } from '../atoms/rhythmAtoms';
 
-/** 缩放：每毫秒对应的像素高度的可选档位。值越大时间轴越"长"、间距越大。 */
+/** 缩放：每毫秒对应的像素宽度的可选档位。值越大时间轴越"长"、间距越大。 */
 const ZOOM_LEVELS = [0.06, 0.09, 0.12, 0.18, 0.28, 0.42, 0.6];
-/** 默认缩放档位索引（对应 0.18，与旧版一致）。 */
+/** 默认缩放档位索引（对应 0.18）。 */
 const DEFAULT_ZOOM_INDEX = 3;
-/** 轨道键位标签。 */
-const KEY_LABELS = ['A', 'S', 'D', 'F', 'SP', 'J', 'K', 'L', ';'];
+/** 每条轨道（行）的最小像素高度。实际高度会随容器高度自适应，撑满可视区。 */
+const MIN_TRACK_HEIGHT = 44;
+/** 左侧行首键位标签列的宽度（像素）。 */
+const LABEL_WIDTH = 56;
+/** 轨道键位标签（自上而下对应轨道 0..8）。 */
+const KEY_LABELS = ['A', 'S', 'D', 'F', 'SPACE', 'J', 'K', 'L', ';'];
 
 /**
  * 可视化谱面编辑器页面（/editor）。
  *
- * 功能：
- * - 在纵向时间轴上点击放置 / 拖拽移动 / 点击删除音符；
- * - 撤销 / 重做（Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z，或工具栏按钮）；
- * - 时间轴缩放（放大/缩小），改善长谱面编辑体验；
- * - 设置 BPM、偏移量、音符密度、每拍细分（节拍对齐网格）；
- * - 导入 / 导出 JSON 格式谱面文件（含元数据 + 音符序列）；
- * - "播放预览"跳转到 /play 使用节奏引擎试玩当前谱面。
+ * 坐标系（本次调整）：
+ * - X 轴 = 时间（从左到右递增），横向滚动。
+ * - Y 轴 = 键盘轨道（9 行，自上而下对应 A S D F SPACE J K L ;）。
  *
- * 时间自上而下流动：y=0 对应 time=offset 起点，越往下时间越大。
+ * 其它能力：撤销/重做、缩放、保存草稿、导入/导出 JSON、随机铺谱、播放预览。
+ *
+ * 布局要点：整页高度固定（h-svh + overflow-hidden），左侧参数面板与右侧时间轴
+ * 各自独立滚动，横向滚动时间轴时不会带动左侧面板。
  */
 export default function EditorPage() {
   const navigate = useNavigate();
   const setPlayChart = useSetAtom(playChartAtom);
+  /** 跨路由保留的编辑器谱面（用于预览后返回时恢复）。 */
+  const [persistedChart, setPersistedChart] = useAtom(editorChartAtom);
+  /** "恢复上次内容"标志：仅预览往返时为 true。 */
+  const [resume, setResume] = useAtom(editorResumeAtom);
 
   /**
-   * 当前正在编辑的谱面，改为使用带撤销/重做历史的状态管理。
-   * chart 为当前值，setChart 提交新值（默认产生一个撤销点）。
+   * 初始谱面：
+   * - 若为预览往返（resume=true）且有内存副本，则恢复它，避免丢失预览前的编辑；
+   * - 否则视为"新建"，呈现空白谱面（不再自动载入上次草稿/已保存内容）。
+   * 用惰性初始化，仅在首次挂载时求值一次；随后消费并重置 resume 标志。
    */
+  const initialChart = resume && persistedChart ? persistedChart : emptyChart();
   const {
     state: chart,
     set: setChart,
@@ -51,20 +63,29 @@ export default function EditorPage() {
     reset: resetChart,
     canUndo,
     canRedo,
-  } = useHistory<Chart>(emptyChart());
+  } = useHistory<Chart>(() => initialChart);
+
+  /**
+   * "是否有未保存改动"标志。保存后清零；任何编辑（含新建/导入后再编辑）置为 true。
+   * 用于返回主页时提示用户。
+   */
+  const [dirty, setDirty] = useState(false);
 
   /** 每拍细分数：1=整拍, 2=八分音符, 4=十六分音符。 */
   const [division, setDivision] = useState(2);
   /** 音符密度（0-1），用于"随机铺谱"。 */
   const [density, setDensity] = useState(0.5);
-  /** 时间轴总时长（毫秒），决定可编辑区域高度。 */
+  /** 时间轴总时长（毫秒），决定可编辑区域宽度。 */
   const [timelineMs, setTimelineMs] = useState(16000);
   /** 缩放档位索引。 */
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   /** 当前每毫秒像素数。 */
   const pxPerMs = ZOOM_LEVELS[zoomIndex];
+  /** 保存成功后的短暂提示。 */
+  const [savedTip, setSavedTip] = useState(false);
 
-  const timelineRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   /** 正在拖拽的音符在数组中的索引；null 表示未拖拽。 */
   const draggingIndex = useRef<number | null>(null);
@@ -73,7 +94,48 @@ export default function EditorPage() {
   /** 拖拽是否真正产生了移动，用于在 pointerup 后抑制误触发的 click。 */
   const suppressClick = useRef(false);
 
+  /**
+   * 时间轴滚动容器的可视高度（像素），用于让 9 条轨道自适应撑满整个高度。
+   * 通过 ResizeObserver 实时测量，窗口/布局变化时更新。
+   */
+  const [viewportHeight, setViewportHeight] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => setViewportHeight(el.clientHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /**
+   * 单条轨道行高：优先让 9 行铺满容器高度；若容器过矮则退回最小行高（可纵向滚动）。
+   */
+  const trackHeight = Math.max(MIN_TRACK_HEIGHT, Math.floor(viewportHeight / TRACK_COUNT));
+
   const { bpm, offset } = chart.metadata;
+
+  // 首次挂载后消费 resume 标志：无论本次是否恢复，都重置为 false，
+  // 使下一次从首页打开编辑器时默认为"新建"。
+  useEffect(() => {
+    if (resume) setResume(false);
+    // 仅需运行一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 每当谱面变化，同步到跨路由内存副本（供预览后返回时恢复）。
+  useEffect(() => {
+    setPersistedChart(chart);
+  }, [chart, setPersistedChart]);
+
+  // 谱面内容变化即标记为"有未保存改动"。
+  // 用"干净基线引用"比较判断：useHistory 在每次编辑后返回新的 chart 引用，
+  // 未变化时引用保持不变。此法对 React StrictMode 的双调用天然安全。
+  const cleanBaselineRef = useRef<Chart>(chart);
+  useEffect(() => {
+    setDirty(chart !== cleanBaselineRef.current);
+  }, [chart]);
 
   // --- 元数据更新辅助（元数据变更也纳入撤销历史） ---
   const updateMeta = useCallback(
@@ -83,41 +145,55 @@ export default function EditorPage() {
     [setChart]
   );
 
-  // --- 网格线：根据 bpm/offset/division 计算所有需要绘制的横向网格线时间点 ---
+  /** 将时间（毫秒）转换为 X 像素坐标。 */
+  const timeToX = useCallback((time: number) => time * pxPerMs, [pxPerMs]);
+  /** 将 X 像素坐标转换为时间（毫秒）。 */
+  const xToTime = useCallback((x: number) => x / pxPerMs, [pxPerMs]);
+
+  // --- 网格线：根据 bpm/offset/division 计算所有竖直网格线的时间点 ---
   const gridLines = useMemo(() => {
     const step = msPerBeat(bpm) / division;
     const lines: { time: number; isBeat: boolean }[] = [];
     for (let t = offset; t <= timelineMs; t += step) {
-      // 是否为整拍线（用于加粗显示）
       const beatIndex = Math.round((t - offset) / (msPerBeat(bpm) / division));
       lines.push({ time: Math.round(t), isBeat: beatIndex % division === 0 });
     }
     return lines;
   }, [bpm, offset, division, timelineMs]);
 
-  /** 将像素 y 坐标转换为时间（毫秒）。 */
-  const yToTime = useCallback((y: number) => y / pxPerMs, [pxPerMs]);
-  /** 将时间转换为像素 y 坐标。 */
-  const timeToY = useCallback((time: number) => time * pxPerMs, [pxPerMs]);
-
   // --- 缩放控制 ---
   const zoomIn = useCallback(() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1)), []);
   const zoomOut = useCallback(() => setZoomIndex((i) => Math.max(0, i - 1)), []);
 
-  /** 点击轨道空白处：在吸附网格后的时间点放置一个 tap 音符。 */
-  const handleTrackClick = useCallback(
-    (track: number, e: React.MouseEvent<HTMLDivElement>) => {
-      // 若刚结束拖拽，忽略这次 click（避免拖拽后误建音符）。
+  /**
+   * 由指针事件计算出 { time, track }。
+   * grid 区域左侧留有 LABEL_WIDTH 的键位标签列，需扣除。
+   */
+  const eventToCell = useCallback(
+    (clientX: number, clientY: number) => {
+      const grid = gridRef.current!;
+      const rect = grid.getBoundingClientRect();
+      // X：扣除标签列宽度后即为时间轴内的像素偏移。
+      const x = clientX - rect.left - LABEL_WIDTH;
+      const rawTime = xToTime(Math.max(0, x));
+      const time = snapToGrid(rawTime, bpm, offset, division);
+      // Y：按行高定位轨道。
+      const y = clientY - rect.top;
+      const track = Math.min(TRACK_COUNT - 1, Math.max(0, Math.floor(y / trackHeight)));
+      return { time, track };
+    },
+    [xToTime, bpm, offset, division, trackHeight]
+  );
+
+  /** 点击网格空白处：放置一个 tap 音符。 */
+  const handleGridClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
       if (suppressClick.current) {
         suppressClick.current = false;
         return;
       }
-      const rect = e.currentTarget.getBoundingClientRect();
-      const y = e.clientY - rect.top + (timelineRef.current?.scrollTop ?? 0);
-      const rawTime = yToTime(y);
-      const time = snapToGrid(rawTime, bpm, offset, division);
+      const { time, track } = eventToCell(e.clientX, e.clientY);
       setChart((c) => {
-        // 若同轨道同时间已有音符则不重复添加。
         if (c.notes.some((n) => n.track === track && Math.abs(n.time - time) < 5)) {
           return c;
         }
@@ -126,7 +202,7 @@ export default function EditorPage() {
         return { ...c, notes: next };
       });
     },
-    [bpm, offset, division, yToTime, setChart]
+    [eventToCell, setChart]
   );
 
   /** 点击音符：删除它。 */
@@ -143,34 +219,20 @@ export default function EditorPage() {
   );
 
   // --- 拖拽移动音符 ---
-  const handleNotePointerDown = useCallback(
-    (index: number, e: React.PointerEvent) => {
-      e.stopPropagation();
-      draggingIndex.current = index;
-      dragRecorded.current = false; // 本次拖拽尚未记录撤销点。
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    []
-  );
+  const handleNotePointerDown = useCallback((index: number, e: React.PointerEvent) => {
+    e.stopPropagation();
+    draggingIndex.current = index;
+    dragRecorded.current = false;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
 
-  const handleTimelinePointerMove = useCallback(
+  const handleGridPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (draggingIndex.current === null || !timelineRef.current) return;
+      if (draggingIndex.current === null) return;
       const idx = draggingIndex.current;
-      // 一旦发生移动，标记抑制随后的 click。
       suppressClick.current = true;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const scrollTop = timelineRef.current.scrollTop;
-      const y = e.clientY - rect.top + scrollTop;
-      const time = snapToGrid(yToTime(y), bpm, offset, division);
+      const { time, track } = eventToCell(e.clientX, e.clientY);
 
-      // 根据 x 定位轨道列。
-      const x = e.clientX - rect.left;
-      const trackWidth = rect.width / TRACK_COUNT;
-      const track = Math.min(TRACK_COUNT - 1, Math.max(0, Math.floor(x / trackWidth)));
-
-      // 第一次移动记录撤销点（coalesce=false），之后的移动合并（coalesce=true），
-      // 从而"一次拖拽 = 一个撤销点"。
       const coalesce = dragRecorded.current;
       dragRecorded.current = true;
       setChart((c) => {
@@ -181,12 +243,11 @@ export default function EditorPage() {
         return { ...c, notes };
       }, coalesce);
     },
-    [bpm, offset, division, yToTime, setChart]
+    [eventToCell, setChart]
   );
 
-  const handleTimelinePointerUp = useCallback(() => {
+  const handleGridPointerUp = useCallback(() => {
     if (draggingIndex.current !== null) {
-      // 拖拽结束后重新排序（合并进当前撤销点，不新增）。
       setChart((c) => ({ ...c, notes: [...c.notes].sort((a, b) => a.time - b.time) }), true);
       draggingIndex.current = null;
     }
@@ -195,7 +256,6 @@ export default function EditorPage() {
   // --- 键盘快捷键：撤销 / 重做 ---
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // 在输入框内编辑文本时不拦截。
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) {
         return;
@@ -214,6 +274,42 @@ export default function EditorPage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [undo, redo]);
+
+  // --- 保存草稿到 localStorage + 保存到"我的谱面"库（首页可见） ---
+  const handleSave = useCallback(() => {
+    const ok = saveEditorDraft(chart);
+    // 同时写入谱面库，使其出现在首页"我的谱面"中，可直接游玩。
+    saveChartToLibrary(chart);
+    if (ok) {
+      cleanBaselineRef.current = chart; // 当前内容成为新的"干净基线"。
+      setDirty(false); // 已保存，清除未保存标记。
+      setSavedTip(true);
+      window.setTimeout(() => setSavedTip(false), 1500);
+    } else {
+      alert('保存失败：本地存储空间可能已满。');
+    }
+  }, [chart]);
+
+  // --- 新建：清空当前编辑内容，重置为空白谱面 ---
+  const handleNew = useCallback(() => {
+    // 有未保存改动时先确认，避免误清空。
+    if (dirty && !confirm('当前谱面有未保存的修改，确定要新建并放弃这些修改吗？')) {
+      return;
+    }
+    const blank = emptyChart();
+    cleanBaselineRef.current = blank; // 新建后即为干净状态。
+    resetChart(blank);
+    setTimelineMs(16000);
+    setDirty(false);
+  }, [dirty, resetChart]);
+
+  // --- 返回主页：有未保存改动时提示 ---
+  const handleBackHome = useCallback(() => {
+    if (dirty && !confirm('当前谱面有未保存的修改，确定要离开吗？未保存的内容将丢失。')) {
+      return;
+    }
+    navigate('/');
+  }, [dirty, navigate]);
 
   // --- 导出 JSON ---
   const handleExport = useCallback(() => {
@@ -237,9 +333,7 @@ export default function EditorPage() {
         try {
           const parsed = JSON.parse(String(reader.result));
           const validated = validateChart(parsed);
-          // 导入是一次全新的编辑起点，清空撤销/重做历史。
           resetChart(validated);
-          // 导入后自动扩展时间轴以覆盖所有音符。
           const maxTime = validated.notes.reduce((m, n) => Math.max(m, n.time), 0);
           setTimelineMs(Math.max(16000, maxTime + 4000));
         } catch (err) {
@@ -247,7 +341,6 @@ export default function EditorPage() {
         }
       };
       reader.readAsText(file);
-      // 重置 input 以便同一文件可再次选择。
       e.target.value = '';
     },
     [resetChart]
@@ -270,24 +363,32 @@ export default function EditorPage() {
   // --- 播放预览 ---
   const handlePreview = useCallback(() => {
     setPlayChart(chart);
+    // 标记为预览往返，返回编辑器时恢复当前内容。
+    setResume(true);
     navigate('/play');
-  }, [chart, navigate, setPlayChart]);
+  }, [chart, navigate, setPlayChart, setResume]);
+
+  // 时间轴总像素宽度（含左侧标签列）。
+  const gridWidth = LABEL_WIDTH + timeToX(timelineMs) + 40;
 
   return (
-    <div className="min-h-svh bg-slate-900 text-white flex flex-col">
+    <div className="h-svh bg-slate-900 text-white flex flex-col overflow-hidden">
       {/* 顶部工具栏 */}
-      <header className="flex items-center justify-between px-4 py-3 bg-black/40 border-b border-white/10">
+      <header className="flex items-center justify-between px-4 py-3 bg-black/40 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="p-2 text-white/60 hover:text-white" title="返回主页">
+          <button onClick={handleBackHome} className="p-2 text-white/60 hover:text-white" title="返回主页">
             <Home size={20} />
           </button>
           <h1 className="text-lg font-bold">谱面编辑器</h1>
+          {dirty && <span className="text-xs text-amber-300" title="有未保存的修改">● 未保存</span>}
+          {savedTip && <span className="text-xs text-emerald-300">已保存 ✓</span>}
         </div>
         <div className="flex items-center gap-2">
-          {/* 撤销 / 重做 */}
           <ToolButton onClick={undo} icon={<Undo2 size={16} />} label="撤销" disabled={!canUndo} title="撤销 (Ctrl/Cmd+Z)" />
           <ToolButton onClick={redo} icon={<Redo2 size={16} />} label="重做" disabled={!canRedo} title="重做 (Ctrl/Cmd+Shift+Z)" />
           <div className="w-px h-6 bg-white/10 mx-1" />
+          <ToolButton onClick={handleNew} icon={<FilePlus size={16} />} label="新建" title="新建空白谱面" />
+          <ToolButton onClick={handleSave} icon={<Save size={16} />} label="保存" title="保存草稿到本地" />
           <ToolButton onClick={() => fileInputRef.current?.click()} icon={<Upload size={16} />} label="导入" />
           <ToolButton onClick={handleExport} icon={<Download size={16} />} label="导出" />
           <ToolButton onClick={handleGenerate} icon={<Wand2 size={16} />} label="随机铺谱" />
@@ -297,22 +398,14 @@ export default function EditorPage() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* 左侧控制面板 */}
+      <div className="flex flex-1 min-h-0">
+        {/* 左侧控制面板：独立滚动，不受时间轴横向滚动影响 */}
         <aside className="w-72 shrink-0 bg-black/20 p-4 overflow-y-auto space-y-4">
           <Field label="标题">
-            <input
-              className="editor-input"
-              value={chart.metadata.title}
-              onChange={(e) => updateMeta({ title: e.target.value })}
-            />
+            <input className="editor-input" value={chart.metadata.title} onChange={(e) => updateMeta({ title: e.target.value })} />
           </Field>
           <Field label="作者">
-            <input
-              className="editor-input"
-              value={chart.metadata.author}
-              onChange={(e) => updateMeta({ author: e.target.value })}
-            />
+            <input className="editor-input" value={chart.metadata.author} onChange={(e) => updateMeta({ author: e.target.value })} />
           </Field>
           <Field label="难度">
             <select
@@ -381,8 +474,6 @@ export default function EditorPage() {
               onChange={(e) => setTimelineMs(Math.max(4000, Number(e.target.value) || 4000))}
             />
           </Field>
-
-          {/* 缩放控制 */}
           <Field label={`缩放：${pxPerMs.toFixed(2)} px/ms`}>
             <div className="flex items-center gap-2">
               <button
@@ -410,70 +501,67 @@ export default function EditorPage() {
           <div className="text-xs text-white/50 border-t border-white/10 pt-3 leading-relaxed">
             音符数：{chart.notes.length}
             <br />
-            点击轨道空白处添加音符，点击音符删除，按住音符可拖拽移动（自动吸附网格）。
+            X 轴为时间（横向滚动），Y 轴为键盘轨道。
+            <br />
+            点击空白添加音符，点击音符删除，拖拽音符可移动（自动吸附网格）。
             <br />
             撤销/重做：Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z。
           </div>
         </aside>
 
-        {/* 右侧时间轴编辑区 */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* 轨道头部键位标签 */}
-          <div className="flex border-b border-white/10 bg-black/20">
-            {KEY_LABELS.map((label, i) => (
+        {/* 右侧时间轴编辑区：横向 + 纵向独立滚动 */}
+        <div ref={scrollRef} className="flex-1 min-w-0 overflow-auto">
+          <div
+            ref={gridRef}
+            className="relative"
+            style={{ width: gridWidth, height: TRACK_COUNT * trackHeight }}
+            onClick={handleGridClick}
+            onPointerMove={handleGridPointerMove}
+            onPointerUp={handleGridPointerUp}
+          >
+            {/* 轨道行（水平条纹）+ 行首键位标签 */}
+            {Array.from({ length: TRACK_COUNT }).map((_, track) => (
               <div
-                key={i}
-                className={`flex-1 text-center py-2 text-sm font-black text-white/50 ${
-                  i === 4 ? 'bg-white/[0.04]' : ''
+                key={track}
+                className={`absolute left-0 right-0 flex items-center border-b border-white/5 ${
+                  track === 4 ? 'bg-white/[0.05]' : track % 2 === 0 ? 'bg-white/[0.02]' : ''
                 }`}
+                style={{ top: track * trackHeight, height: trackHeight }}
               >
-                {label}
+                {/* 行首键位标签（sticky 固定在左侧，横向滚动时始终可见） */}
+                <div
+                  className="sticky left-0 z-10 h-full flex items-center justify-center text-sm font-black text-white/60 bg-slate-900/90 border-r border-white/10"
+                  style={{ width: LABEL_WIDTH }}
+                >
+                  {KEY_LABELS[track]}
+                </div>
               </div>
             ))}
-          </div>
 
-          {/* 可滚动时间轴 */}
-          <div ref={timelineRef} className="flex-1 overflow-y-auto relative">
-            <div
-              className="relative flex"
-              style={{ height: timeToY(timelineMs) + 40 }}
-              onPointerMove={handleTimelinePointerMove}
-              onPointerUp={handleTimelinePointerUp}
-            >
-              {/* 网格线 */}
-              {gridLines.map((line, i) => (
-                <div
-                  key={i}
-                  className={`absolute left-0 right-0 ${line.isBeat ? 'bg-white/20' : 'bg-white/[0.06]'}`}
-                  style={{ top: timeToY(line.time), height: line.isBeat ? 2 : 1 }}
-                />
-              ))}
+            {/* 竖直网格线（时间线），从标签列右侧开始绘制 */}
+            {gridLines.map((line, i) => (
+              <div
+                key={i}
+                className={`absolute top-0 bottom-0 ${line.isBeat ? 'bg-white/20' : 'bg-white/[0.06]'}`}
+                style={{ left: LABEL_WIDTH + timeToX(line.time), width: line.isBeat ? 2 : 1 }}
+              />
+            ))}
 
-              {/* 轨道列 */}
-              {Array.from({ length: TRACK_COUNT }).map((_, track) => (
-                <div
-                  key={track}
-                  className={`flex-1 relative border-r border-white/5 cursor-pointer ${
-                    track === 4 ? 'bg-white/[0.02]' : ''
-                  }`}
-                  onClick={(e) => handleTrackClick(track, e)}
-                >
-                  {/* 属于该轨道的音符 */}
-                  {chart.notes.map((note, index) =>
-                    note.track === track ? (
-                      <div
-                        key={index}
-                        onClick={(e) => handleNoteClick(index, e)}
-                        onPointerDown={(e) => handleNotePointerDown(index, e)}
-                        className="absolute left-1/2 -translate-x-1/2 h-3 rounded bg-emerald-400 hover:bg-emerald-300 shadow shadow-emerald-400/40 cursor-grab active:cursor-grabbing"
-                        style={{ top: timeToY(note.time) - 6, width: '75%' }}
-                        title={`t=${note.time}ms, track=${track}`}
-                      />
-                    ) : null
-                  )}
-                </div>
-              ))}
-            </div>
+            {/* 音符 */}
+            {chart.notes.map((note, index) => (
+              <div
+                key={index}
+                onClick={(e) => handleNoteClick(index, e)}
+                onPointerDown={(e) => handleNotePointerDown(index, e)}
+                className="absolute w-3 rounded bg-emerald-400 hover:bg-emerald-300 shadow shadow-emerald-400/40 cursor-grab active:cursor-grabbing"
+                style={{
+                  left: LABEL_WIDTH + timeToX(note.time) - 6,
+                  top: note.track * trackHeight + 6,
+                  height: trackHeight - 12,
+                }}
+                title={`t=${note.time}ms, track=${note.track}`}
+              />
+            ))}
           </div>
         </div>
       </div>

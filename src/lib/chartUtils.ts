@@ -17,6 +17,106 @@ export function msPerBeat(bpm: number): number {
   return 60000 / Math.max(1, bpm);
 }
 
+/** 编辑器草稿谱面在 localStorage 中的存储键。 */
+const EDITOR_DRAFT_KEY = 'fingerdance.editorDraft.v1';
+
+/**
+ * 将当前编辑的谱面保存到 localStorage（草稿），下次进入编辑器可自动恢复。
+ * 返回是否保存成功。
+ */
+export function saveEditorDraft(chart: Chart): boolean {
+  try {
+    localStorage.setItem(EDITOR_DRAFT_KEY, serializeChart(chart));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 从 localStorage 读取编辑器草稿谱面；无有效草稿时返回 null。 */
+export function loadEditorDraft(): Chart | null {
+  try {
+    const raw = localStorage.getItem(EDITOR_DRAFT_KEY);
+    if (!raw) return null;
+    return validateChart(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/** 已保存谱面库在 localStorage 中的存储键。 */
+const SAVED_CHARTS_KEY = 'fingerdance.savedCharts.v1';
+
+/**
+ * 已保存谱面条目：带唯一 id、保存时间与谱面本体。
+ * 用于首页"我的谱面"列表展示与游玩。
+ */
+export interface SavedChart {
+  /** 唯一 id（保存时生成，用于删除/覆盖）。 */
+  id: string;
+  /** 保存时间（Unix 毫秒时间戳）。 */
+  savedAt: number;
+  /** 谱面本体。 */
+  chart: Chart;
+}
+
+/** 从 localStorage 读取全部已保存谱面；解析失败时安全返回空数组。 */
+export function loadSavedCharts(): SavedChart[] {
+  try {
+    const raw = localStorage.getItem(SAVED_CHARTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // 逐条校验，过滤脏数据。
+    return parsed
+      .filter((e) => e && typeof e.id === 'string' && e.chart)
+      .map((e) => ({
+        id: String(e.id),
+        savedAt: Number(e.savedAt) || Date.now(),
+        chart: validateChart(e.chart),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 将谱面保存到"我的谱面"库并持久化，返回更新后的完整列表。
+ * 去重策略：同"标题 + 难度"视为同一谱面并覆盖更新（避免重复保存产生大量副本）。
+ */
+export function saveChartToLibrary(chart: Chart): SavedChart[] {
+  const list = loadSavedCharts();
+  const key = `${chart.metadata.title}\u0000${chart.metadata.difficulty}`;
+  const existingIndex = list.findIndex(
+    (e) => `${e.chart.metadata.title}\u0000${e.chart.metadata.difficulty}` === key
+  );
+  const entry: SavedChart = {
+    id: existingIndex >= 0 ? list[existingIndex].id : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    savedAt: Date.now(),
+    // 存一份深拷贝，避免后续编辑影响已保存内容。
+    chart: JSON.parse(JSON.stringify(chart)) as Chart,
+  };
+  if (existingIndex >= 0) list[existingIndex] = entry;
+  else list.push(entry);
+  try {
+    localStorage.setItem(SAVED_CHARTS_KEY, JSON.stringify(list));
+  } catch {
+    // 存储失败（如空间不足）时忽略，调用方可通过返回值判断。
+  }
+  return list;
+}
+
+/** 按 id 删除已保存谱面，返回更新后的列表。 */
+export function deleteSavedChart(id: string): SavedChart[] {
+  const list = loadSavedCharts().filter((e) => e.id !== id);
+  try {
+    localStorage.setItem(SAVED_CHARTS_KEY, JSON.stringify(list));
+  } catch {
+    // 忽略。
+  }
+  return list;
+}
+
 /**
  * 将任意时间戳吸附到最近的节拍网格线。
  * @param time 原始时间（毫秒）
