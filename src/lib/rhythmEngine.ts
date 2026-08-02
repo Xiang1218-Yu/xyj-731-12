@@ -14,6 +14,7 @@
 
 import type { Chart, ChartNote, Lane } from '../types/chart';
 import {
+  applyHoldTail,
   applyJudge,
   calcAccuracy,
   calcRank,
@@ -32,6 +33,8 @@ type NoteState = 'pending' | 'holding' | 'hit' | 'missed';
 interface RuntimeNote {
   note: ChartNote;
   state: NoteState;
+  /** hold 头部命中时的判定等级，用于尾部结算分数 */
+  headResult?: 'perfect' | 'good';
 }
 
 /** 每帧需要渲染的音符视图 */
@@ -143,6 +146,8 @@ export class RhythmEngine {
     this.stats = applyJudge(this.stats, result);
     if (target.note.type === 'hold') {
       target.state = 'holding';
+      // 记录头部判定等级，供尾部结算分数使用
+      target.headResult = result === 'perfect' ? 'perfect' : 'good';
       triggerLaneAttack(lane);
     } else {
       target.state = 'hit';
@@ -170,8 +175,11 @@ export class RhythmEngine {
         this.stats = applyJudge(this.stats, 'miss');
         this.callbacks.onJudge('miss', lane, this.stats);
       } else {
-        // 按时松开
+        // 按时松开：结算尾部得分
         holding.state = 'hit';
+        if (holding.headResult) {
+          this.stats = applyHoldTail(this.stats, holding.headResult);
+        }
       }
       triggerLaneRelease(lane);
     }
@@ -212,12 +220,15 @@ export class RhythmEngine {
       }
     }
 
-    // 2. 自动结束 holding：到了 hold 尾部仍按着，则视为成功
+    // 2. 自动结束 holding：到了 hold 尾部仍按着，则视为成功并结算尾部得分
     for (const rn of this.notes) {
       if (rn.state !== 'holding') continue;
       const endTime = rn.note.time + (rn.note.duration ?? 0);
       if (songTime >= endTime) {
         rn.state = 'hit';
+        if (rn.headResult) {
+          this.stats = applyHoldTail(this.stats, rn.headResult);
+        }
         if (this.pressed[rn.note.lane]) {
           this.pressed[rn.note.lane] = false;
           triggerLaneRelease(rn.note.lane);

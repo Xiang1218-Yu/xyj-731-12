@@ -88,6 +88,7 @@ function HomePage() {
           offset: 0,
           difficulty: 'Normal' as const,
           level: 5,
+          density: 0,
         },
         notes: [],
       },
@@ -108,6 +109,13 @@ function HomePage() {
             <Music size={32} /> Finger Dance
           </h1>
           <div className="flex gap-2">
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-sm font-bold"
+              title="Back to classic mode"
+            >
+              <Music size={16} /> Classic
+            </button>
             <button
               onClick={() => navigate('/editor')}
               className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-sm font-bold"
@@ -160,6 +168,7 @@ function SongRow({ item, onPlay }: { item: SongItem; onPlay: () => void }) {
         <div className="font-bold truncate">{chart.metadata.title}</div>
         <div className="text-xs text-white/50">
           by {chart.metadata.author} · {chart.metadata.bpm} BPM
+          {chart.metadata.density > 0 ? ` · ${chart.metadata.density} n/s` : ''}
           {source === 'custom' && ' · Custom'}
           {source === 'builtin' && item.file ? ' · Built-in' : ''}
         </div>

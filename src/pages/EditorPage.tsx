@@ -14,11 +14,12 @@ import { useAtom, useSetAtom } from 'jotai';
 import {
   customChartsAtom,
   draftChartAtom,
+  draftDirtyAtom,
   selectedChartAtom,
 } from '../atoms/chartAtoms';
 import { navigateAtom } from '../atoms/routeAtoms';
-import { rhythmStatusAtom } from '../atoms/rhythmAtoms';
-import type { ChartNote } from '../types/chart';
+import { rhythmStatusAtom, resetSignalAtom } from '../atoms/rhythmAtoms';
+import type { Chart, ChartNote } from '../types/chart';
 import { createEmptyChart, parseChart } from '../types/chart';
 import { beatDuration } from '../lib/timeline';
 import { click, initRhythmAudio, triggerLaneNote, releaseAllRhythm } from '../lib/rhythmAudio';
@@ -27,15 +28,26 @@ import EditorTimeline from '../components/EditorTimeline';
 import { Play, Pause, Square, Trash2 } from 'lucide-react';
 
 function EditorPage() {
-  const [chart, setChart] = useAtom(draftChartAtom);
+  const [chart, setChartState] = useAtom(draftChartAtom);
+  const [, setDraftDirty] = useAtom(draftDirtyAtom);
   const [customCharts, setCustomCharts] = useAtom(customChartsAtom);
   const navigate = useSetAtom(navigateAtom);
   const setSelected = useSetAtom(selectedChartAtom);
   const setRhythmStatus = useSetAtom(rhythmStatusAtom);
+  const bumpReset = useSetAtom(resetSignalAtom);
 
   const [subdivision, setSubdivision] = useState(2);
   const [playhead, setPlayhead] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  /**
+   * 统一的草稿更新入口：所有对谱面的编辑都经过这里，
+   * 会把「未保存」标记置为 true。
+   */
+  const setChart = (next: Chart | ((prev: Chart) => Chart)) => {
+    setChartState(next);
+    setDraftDirty(true);
+  };
 
   // 预览相关 ref
   const rafRef = useRef<number | null>(null);
@@ -53,6 +65,18 @@ function EditorPage() {
   };
 
   useEffect(() => () => stopPreview(), []);
+
+  // 浏览器关闭/刷新时，若有未保存修改则提示
+  const [dirty] = useAtom(draftDirtyAtom);
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
 
   /** 播放预览：按 BPM 打节拍器，并在音符时间点触发对应轨道声音 */
   const playPreview = async () => {
@@ -135,10 +159,11 @@ function EditorPage() {
         ),
     );
     setCustomCharts([...others, chart]);
+    setDraftDirty(false);
     alert('Chart saved to your library!');
   };
 
-  /** 自动生成：按密度在节拍上随机放置音符 */
+  /** 自动生成：按密度在节拍上随机放置音符，并回填密度字段 */
   const handleGenerate = (perBeat: number) => {
     const beat = beatDuration(chart.metadata.bpm);
     const totalBeats = 16; // 默认生成 16 小节 * 4
@@ -155,16 +180,24 @@ function EditorPage() {
         }
       }
     }
-    setChart({ ...chart, notes: notes.sort((a, b) => a.time - b.time) });
+    // 根据实际生成的音符数与时长，计算真实密度（n/s）
+    const duration = totalBeats * beat;
+    const density = duration > 0 ? Number((notes.length / duration).toFixed(2)) : 0;
+    setChart({
+      ...chart,
+      notes: notes.sort((a, b) => a.time - b.time),
+      metadata: { ...chart.metadata, density },
+    });
   };
 
-  /** 跳转到游戏页测试当前谱面 */
+  /** 跳转到节奏游戏页测试当前谱面（草稿会保留，便于返回继续编辑） */
   const handleTestPlay = () => {
     stopPreview();
     setSelected({ chart, source: 'custom' });
     setRhythmStatus('idle');
-    navigate('/');
-    // 直接进入游戏需要稍等路由切换
+    bumpReset((n) => n + 1);
+    navigate('/rhythm');
+    // 稍等路由切换后自动开始
     setTimeout(() => setRhythmStatus('playing'), 80);
   };
 
@@ -174,8 +207,24 @@ function EditorPage() {
 
   const handleNew = () => {
     if (confirm('Discard current chart and start a new one?')) {
-      setChart(createEmptyChart());
+      setChartState(createEmptyChart());
+      setDraftDirty(false);
     }
+  };
+
+  /**
+   * 返回首页：
+   *  - 若有未保存修改，提示用户确认；
+   *  - 离开时清空草稿，保证下次进入编辑器是空白谱面（已保存的谱面可在首页选歌）。
+   */
+  const handleBack = () => {
+    stopPreview();
+    if (dirty && !confirm('You have unsaved changes. Leave without saving?')) {
+      return;
+    }
+    setChartState(createEmptyChart());
+    setDraftDirty(false);
+    navigate('/');
   };
 
   return (
@@ -188,7 +237,7 @@ function EditorPage() {
         onSave={handleSave}
         onPreview={handleTestPlay}
         onGenerate={handleGenerate}
-        onBack={() => navigate('/')}
+        onBack={handleBack}
       />
 
       {/* 预览控制条 */}

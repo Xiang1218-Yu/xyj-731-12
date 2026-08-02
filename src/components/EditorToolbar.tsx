@@ -127,6 +127,17 @@ function EditorToolbar({
           onChange={(e) => updateMeta({ level: Number(e.target.value) || 1 })}
         />
       </label>
+      <label className="flex flex-col">
+        <span className="text-[10px] text-white/50 uppercase">Density (n/s)</span>
+        <input
+          type="number"
+          step={0.1}
+          min={0}
+          className="bg-white/10 rounded px-2 py-1 w-20 outline-none"
+          value={chart.metadata.density}
+          onChange={(e) => updateMeta({ density: Number(e.target.value) || 0 })}
+        />
+      </label>
 
       <div className="w-px h-8 bg-white/10" />
 

@@ -1,14 +1,13 @@
 /**
- * App —— 应用根组件。
+ * App —— 应用根组件（路由分发）。
  *
- * 负责：
- *  - 挂载全局音频处理（保留旧版菜单音效）；
- *  - 启动时从 localStorage 读取用户自定义谱面；
- *  - 订阅浏览器前进/后退，同步 routeAtom；
- *  - 根据当前路由渲染首页 / 编辑器 / 排行榜。
+ * 路由设计（保留原有游戏，新增功能独立成页，互不干扰）：
+ *  - /        原始「指舞」游戏（关卡选择 / 游戏 / 结算，交互完全不变）；
+ *  - /rhythm  新增的下落式节奏游戏（基于谱面 Chart，带判定/评分/连击）；
+ *  - /editor  可视化谱面编辑器；
+ *  - /ranking 成绩排行榜。
  *
- * 旧版的指舞小游戏（GameContainer 等）仍保留在代码库中，
- * 但新的主入口改为基于谱面（Chart）的节奏游戏。
+ * 启动时从 localStorage 读取用户自定义谱面，并同步浏览器前进/后退。
  */
 
 import { useEffect } from 'react';
@@ -19,18 +18,17 @@ import {
   customChartsAtom,
   persistCustomChartsAtom,
 } from './atoms/chartAtoms';
-import { useGlobalAudio } from './hooks/useGlobalAudio';
+import ClassicApp from './pages/ClassicApp';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import RankingPage from './pages/RankingPage';
 
 function App() {
-  useGlobalAudio();
   const route = useAtomValue(routeAtom);
   const syncRoute = useSetAtom(syncRouteAtom);
   const initCustomCharts = useSetAtom(initCustomChartsAtom);
   const persistCustomCharts = useSetAtom(persistCustomChartsAtom);
-  // 读取自定义谱面以订阅变化（变化时触发持久化）
+  // 订阅自定义谱面变化以自动持久化
   const customCharts = useAtomValue(customChartsAtom);
 
   // 初始化：同步路由 + 加载本地自定义谱面
@@ -50,8 +48,11 @@ function App() {
     page = <EditorPage />;
   } else if (route === '/ranking') {
     page = <RankingPage />;
-  } else {
+  } else if (route === '/rhythm') {
     page = <HomePage />;
+  } else {
+    // / —— 原始游戏，页面与交互保持不变
+    page = <ClassicApp />;
   }
 
   return (

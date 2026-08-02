@@ -40,11 +40,11 @@ function RhythmResultPanel({ result, stats }: Props) {
     bumpReset((n) => n + 1);
   };
 
-  /** 返回首页：清除选中谱面 */
+  /** 返回节奏模式选歌页：清除选中谱面 */
   const handleHome = () => {
     setSelectedChart(null);
     setStatus('idle');
-    navigate('/');
+    navigate('/rhythm');
   };
 
   /** 查看排行榜：清除当前谱面并跳转 */

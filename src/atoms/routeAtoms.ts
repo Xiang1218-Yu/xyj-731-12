@@ -11,10 +11,11 @@
 
 import { atom } from 'jotai';
 
-export type Route = '/' | '/editor' | '/ranking';
+export type Route = '/' | '/rhythm' | '/editor' | '/ranking';
 
 /** 根据当前 pathname 解析为已知路由，未知路径统一回到首页 */
 function parseRoute(pathname: string): Route {
+  if (pathname === '/rhythm') return '/rhythm';
   if (pathname === '/editor') return '/editor';
   if (pathname === '/ranking') return '/ranking';
   return '/';

@@ -38,6 +38,9 @@ function RhythmHud() {
         <div className="text-xs text-white/60">
           {selected?.chart.metadata.difficulty} · ★{selected?.chart.metadata.level} ·{' '}
           {selected?.chart.metadata.bpm} BPM
+          {selected && selected.chart.metadata.density > 0
+            ? ` · ${selected.chart.metadata.density} n/s`
+            : ''}
         </div>
       </div>
 

@@ -56,6 +56,13 @@ export const persistCustomChartsAtom = atom(null, (get) => {
 export const draftChartAtom = atom<Chart>(createEmptyChart());
 
 /**
+ * 草稿是否有未保存的修改。
+ * 在编辑器中任何编辑操作都会置为 true；保存 / 新建 / 主动清空后置为 false。
+ * 用于离开编辑器时提示用户。
+ */
+export const draftDirtyAtom = atom<boolean>(false);
+
+/**
  * 首页选中、即将进入游戏的谱面。
  * 同时记录它来自内置关卡还是自定义谱面。
  */

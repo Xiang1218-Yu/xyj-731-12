@@ -49,6 +49,12 @@ export interface ChartMeta {
   difficulty: Difficulty;
   /** 难度数值（用于展示，例如 ★5） */
   level: number;
+  /**
+   * 音符密度（每秒音符数，notes per second）。
+   * 用于描述谱面密集程度，可在编辑器中手动设置，
+   * 自动生成音符时也会根据 BPM/细分计算并回填此字段。
+   */
+  density: number;
 }
 
 /** 完整谱面文件结构（即导入/导出的 JSON 结构） */
@@ -71,6 +77,7 @@ export function createEmptyChart(): Chart {
       offset: 0,
       difficulty: 'Normal',
       level: 5,
+      density: 2,
     },
     notes: [],
   };
@@ -110,6 +117,7 @@ export function parseChart(raw: unknown): Chart | null {
       offset: Number(meta.offset) || 0,
       difficulty: (meta.difficulty as Difficulty) || 'Normal',
       level: Number(meta.level) || 5,
+      density: Number(meta.density) || 0,
     },
     notes: parsedNotes,
   };

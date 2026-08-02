@@ -60,10 +60,10 @@ function RhythmPlayfield({ subscribeFrame }: Props) {
           noteElsRef.current.set(rn.id, el);
         }
 
-        // headY: 0=顶部, 1=判定线
+        // headY: 0=场地顶部, 1=判定线。音符随时间由顶部（0）下落至判定线（1）。
         const headY = rn.headY;
-        // 头部像素 y = (1-headY) 在顶部之上为负
-        const y = judgeY - headY * travel;
+        // 头部像素 y：0 时在顶部，1 时在判定线 judgeY
+        const y = headY * travel;
         // 轨道水平位置
         const laneWidth = 100 / LANE_COUNT;
         el.style.left = `${rn.lane * laneWidth + laneWidth * 0.15}%`;
@@ -71,12 +71,16 @@ function RhythmPlayfield({ subscribeFrame }: Props) {
         el.style.transform = `translate3d(0, ${y}px, 0)`;
         el.style.opacity = rn.judged ? '0.25' : '1';
 
-        // hold 音符：用高度表示从 head 到 tail 的长条
+        // hold 音符：长条从尾部（上方）延伸到头部（下方判定处）。
+        // 把元素底部对齐到头部 y，再向上撑开高度。
         if (rn.type === 'hold') {
           const tailY = rn.tailY;
-          // tail 一般在 head 上方（更小 y），所以高度 = (headY - tailY) * travel
+          // head 在 tail 下方（y 更大），故高度 = (headY - tailY) * travel
           const holdHeight = Math.max(8, (headY - tailY) * travel);
           el.style.height = `${holdHeight}px`;
+          // 以底边为基准定位，translateY 把元素上移自身高度，使底边落在头部位置
+          el.style.transformOrigin = 'bottom center';
+          el.style.transform = `translate3d(0, ${y - holdHeight}px, 0)`;
         }
       }
 

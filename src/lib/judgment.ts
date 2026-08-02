@@ -92,6 +92,25 @@ export function applyJudge(stats: JudgeStats, result: JudgeResult): JudgeStats {
 }
 
 /**
+ * 结算长按（hold）音符的尾部得分。
+ *
+ * 设计：头部命中时已经计入一次 Perfect/Good 判定（影响连击与准确率）；
+ * 当玩家长按至尾部并成功结束时，额外给予一次与头部同等级的分数奖励
+ * （不重复累加 Perfect/Good 计数，也不改变连击与准确率），
+ * 这样 Hold 音符的总价值高于普通 Tap，符合节奏游戏惯例。
+ *
+ * @param stats 当前统计
+ * @param headResult 头部命中时的判定等级（perfect/good）
+ */
+export function applyHoldTail(
+  stats: JudgeStats,
+  headResult: 'perfect' | 'good',
+): JudgeStats {
+  const gained = Math.round(BASE_SCORE[headResult] * comboMultiplier(stats.combo));
+  return { ...stats, score: stats.score + gained };
+}
+
+/**
  * 计算准确率（0~1）。
  * 采用加权：Perfect=1、Good=0.5、Miss=0，再除以总音符数。
  */

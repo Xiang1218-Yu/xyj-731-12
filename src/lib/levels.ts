@@ -56,6 +56,10 @@ export function legacyLevelToChart(level: LegacyLevel, id = 0): Chart {
     (sum, p) => sum + p.filter((v) => v === 1).length,
     0,
   );
+  // 谱面总时长（秒）：步数 * 每拍时长
+  const totalBeats = level.patterns.length;
+  const duration = totalBeats * (60 / BUILTIN_BPM);
+  const density = duration > 0 ? totalNotes / duration : 0;
   let difficulty: Difficulty = 'Easy';
   let star = 3;
   if (totalNotes > 120) {
@@ -74,6 +78,7 @@ export function legacyLevelToChart(level: LegacyLevel, id = 0): Chart {
       offset: 0,
       difficulty,
       level: star,
+      density: Number(density.toFixed(2)),
     },
     notes: patternsToNotes(level.patterns),
     // 保留 id 信息在 title 中（这里不额外加字段以免破坏类型）

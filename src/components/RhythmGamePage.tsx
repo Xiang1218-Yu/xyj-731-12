@@ -36,11 +36,11 @@ function RhythmGamePage() {
     setStatus('playing');
   };
 
-  /** 返回首页：清除当前选中谱面，使首页显示选歌列表 */
+  /** 返回节奏模式选歌页：清除当前选中谱面 */
   const handleBackHome = () => {
     setSelected(null);
     setStatus('idle');
-    navigate('/');
+    navigate('/rhythm');
   };
 
   // 未选择谱面时的提示
