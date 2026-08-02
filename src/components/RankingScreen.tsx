@@ -1,3 +1,15 @@
+// ============================================================
+// 排行榜页面组件 (RankingScreen)
+// ============================================================
+// 功能清单：
+// 1. 按"歌曲 + 难度"分组展示，每组默认显示最佳成绩
+// 2. 点击分组可展开查看该歌曲+难度的所有历史记录
+// 3. 支持按歌曲名、难度、日期范围筛选
+// 4. 支持按分数、准确率、日期、最大连击排序
+// 5. 支持文本搜索歌曲名
+// 6. 支持删除单条记录和清空全部记录
+// ============================================================
+
 import { useState, useMemo, useCallback } from 'react';
 import { useAtom } from 'jotai';
 import {
@@ -7,11 +19,12 @@ import {
   Search,
   ArrowUpDown,
   Calendar,
+  ChevronDown,
+  ChevronRight,
+  Crown,
+  Medal,
 } from 'lucide-react';
-import {
-  screenAtom,
-  scoreRecordsAtom,
-} from '../atoms/gameAtoms';
+import { screenAtom, scoreRecordsAtom } from '../atoms/gameAtoms';
 import {
   deleteScore,
   clearAllScores,
@@ -21,15 +34,41 @@ import {
 import type { ScoreRecord } from '../types/chart';
 import { getRank } from '../types/chart';
 
-// 排序方式类型
-type SortField = 'score' | 'accuracy' | 'playedAt' | 'maxCombo';
-type SortDirection = 'asc' | 'desc';
+// ============================================================
+// 类型定义
+// ============================================================
 
-// 日期筛选预设
+/** 排序字段 */
+type SortField = 'score' | 'accuracy' | 'playedAt' | 'maxCombo';
+/** 排序方向 */
+type SortDirection = 'asc' | 'desc';
+/** 日期筛选预设 */
 type DatePreset = 'all' | 'today' | 'week' | 'month';
+/** 视图模式：分组视图或平铺视图 */
+type ViewMode = 'grouped' | 'flat';
 
 /**
- * 格式化日期为本地字符串
+ * 分组数据结构：同一首歌 + 同一难度的所有记录
+ */
+interface ChartGroup {
+  /** 分组唯一键：歌曲名@@@难度 */
+  key: string;
+  songTitle: string;
+  difficulty: string;
+  /** 该分组内的所有记录（已排序） */
+  records: ScoreRecord[];
+  /** 该分组的最佳成绩记录 */
+  best: ScoreRecord;
+  /** 该分组总游玩次数 */
+  playCount: number;
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+
+/**
+ * 将 ISO 日期字符串格式化为本地可读格式
  */
 function formatDate(isoString: string): string {
   const d = new Date(isoString);
@@ -43,7 +82,7 @@ function formatDate(isoString: string): string {
 }
 
 /**
- * 检查日期是否在预设范围内
+ * 检查日期是否在指定的预设范围内
  */
 function isDateInPreset(isoString: string, preset: DatePreset): boolean {
   if (preset === 'all') return true;
@@ -67,39 +106,161 @@ function isDateInPreset(isoString: string, preset: DatePreset): boolean {
 }
 
 /**
- * 排行榜页面组件
- *
- * 功能：
- * - 展示所有历史成绩
- * - 按歌曲名、难度、日期范围筛选
- * - 按分数、准确率、日期、最大连击排序
- * - 删除单条成绩
- * - 清空所有成绩
- * - 展示每条成绩的等级（S/A/B/C/D）
+ * 排行榜页面主组件
  */
 export default function RankingScreen() {
   const [, setScreen] = useAtom(screenAtom);
   const [records, setRecords] = useAtom(scoreRecordsAtom);
 
-  // 筛选状态
-  const [songFilter, setSongFilter] = useState<string>('all');
-  const [difficultyFilter, setDifficultyFilter] = useState<string>('all');
-  const [datePreset, setDatePreset] = useState<DatePreset>('all');
-  const [searchText, setSearchText] = useState('');
+  // --- 筛选状态 ---
+  const [songFilter, setSongFilter] = useState<string>('all'); // 歌曲筛选
+  const [difficultyFilter, setDifficultyFilter] = useState<string>('all'); // 难度筛选
+  const [datePreset, setDatePreset] = useState<DatePreset>('all'); // 日期范围
+  const [searchText, setSearchText] = useState(''); // 文本搜索
 
-  // 排序状态
+  // --- 排序状态 ---
   const [sortField, setSortField] = useState<SortField>('score');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
 
-  // 获取可选项
+  // --- 视图状态 ---
+  const [viewMode, setViewMode] = useState<ViewMode>('grouped'); // 分组/平铺
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set()); // 展开的分组
+
+  // 从记录中提取可选的筛选项
   const songTitles = useMemo(() => getUniqueSongTitles(records), [records]);
   const difficulties = useMemo(
     () => getUniqueDifficulties(records),
     [records],
   );
 
+  // ============================================================
+  // 筛选逻辑
+  // ============================================================
+
   /**
-   * 切换排序
+   * 经过所有筛选条件过滤后的记录
+   */
+  const filteredRecords = useMemo(() => {
+    let result = [...records];
+
+    // 按歌曲筛选
+    if (songFilter !== 'all') {
+      result = result.filter((r) => r.songTitle === songFilter);
+    }
+
+    // 按难度筛选
+    if (difficultyFilter !== 'all') {
+      result = result.filter((r) => r.difficulty === difficultyFilter);
+    }
+
+    // 按日期范围筛选
+    result = result.filter((r) => isDateInPreset(r.playedAt, datePreset));
+
+    // 按文本搜索（歌曲名包含关键词）
+    if (searchText.trim()) {
+      const query = searchText.trim().toLowerCase();
+      result = result.filter((r) =>
+        r.songTitle.toLowerCase().includes(query),
+      );
+    }
+
+    return result;
+  }, [records, songFilter, difficultyFilter, datePreset, searchText]);
+
+  // ============================================================
+  // 分组逻辑
+  // ============================================================
+
+  /**
+   * 将筛选后的记录按"歌曲+难度"分组
+   * 每组内的记录按分数降序排列
+   */
+  const groupedRecords = useMemo<ChartGroup[]>(() => {
+    const groupMap = new Map<string, ScoreRecord[]>();
+
+    // 第一步：按 key 分组
+    filteredRecords.forEach((record) => {
+      const key = `${record.songTitle}@@@${record.difficulty}`;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+      }
+      groupMap.get(key)!.push(record);
+    });
+
+    // 第二步：构建分组对象，找出最佳成绩
+    const groups: ChartGroup[] = [];
+    groupMap.forEach((groupRecords, key) => {
+      // 按分数降序排序，第一条即最佳
+      const sorted = [...groupRecords].sort((a, b) => b.score - a.score);
+      const [songTitle, difficulty] = key.split('@@@');
+      groups.push({
+        key,
+        songTitle,
+        difficulty,
+        records: sorted,
+        best: sorted[0],
+        playCount: sorted.length,
+      });
+    });
+
+    // 第三步：对分组排序（按最佳成绩的当前排序字段）
+    groups.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'score':
+          cmp = a.best.score - b.best.score;
+          break;
+        case 'accuracy':
+          cmp = a.best.accuracy - b.best.accuracy;
+          break;
+        case 'playedAt':
+          cmp =
+            new Date(a.best.playedAt).getTime() -
+            new Date(b.best.playedAt).getTime();
+          break;
+        case 'maxCombo':
+          cmp = a.best.maxCombo - b.best.maxCombo;
+          break;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+
+    return groups;
+  }, [filteredRecords, sortField, sortDir]);
+
+  /**
+   * 平铺视图下排序后的记录
+   */
+  const sortedFlatRecords = useMemo(() => {
+    const result = [...filteredRecords];
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'score':
+          cmp = a.score - b.score;
+          break;
+        case 'accuracy':
+          cmp = a.accuracy - b.accuracy;
+          break;
+        case 'playedAt':
+          cmp = new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime();
+          break;
+        case 'maxCombo':
+          cmp = a.maxCombo - b.maxCombo;
+          break;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+    return result;
+  }, [filteredRecords, sortField, sortDir]);
+
+  // ============================================================
+  // 交互处理
+  // ============================================================
+
+  /**
+   * 切换排序字段和方向
+   * 同一字段再次点击时切换升序/降序
    */
   const toggleSort = useCallback(
     (field: SortField) => {
@@ -114,66 +275,22 @@ export default function RankingScreen() {
   );
 
   /**
-   * 筛选并排序后的记录
+   * 切换分组展开/折叠状态
    */
-  const filteredRecords = useMemo(() => {
-    let result = [...records];
-
-    // 歌曲筛选
-    if (songFilter !== 'all') {
-      result = result.filter((r) => r.songTitle === songFilter);
-    }
-
-    // 难度筛选
-    if (difficultyFilter !== 'all') {
-      result = result.filter((r) => r.difficulty === difficultyFilter);
-    }
-
-    // 日期筛选
-    result = result.filter((r) => isDateInPreset(r.playedAt, datePreset));
-
-    // 文本搜索（歌曲名）
-    if (searchText.trim()) {
-      const query = searchText.trim().toLowerCase();
-      result = result.filter((r) =>
-        r.songTitle.toLowerCase().includes(query),
-      );
-    }
-
-    // 排序
-    result.sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case 'score':
-          cmp = a.score - b.score;
-          break;
-        case 'accuracy':
-          cmp = a.accuracy - b.accuracy;
-          break;
-        case 'playedAt':
-          cmp =
-            new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime();
-          break;
-        case 'maxCombo':
-          cmp = a.maxCombo - b.maxCombo;
-          break;
+  const toggleGroupExpand = useCallback((key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
       }
-      return sortDir === 'desc' ? -cmp : cmp;
+      return next;
     });
-
-    return result;
-  }, [
-    records,
-    songFilter,
-    difficultyFilter,
-    datePreset,
-    searchText,
-    sortField,
-    sortDir,
-  ]);
+  }, []);
 
   /**
-   * 删除单条成绩
+   * 删除单条成绩记录
    */
   const handleDelete = useCallback(
     (id: string) => {
@@ -186,21 +303,18 @@ export default function RankingScreen() {
   );
 
   /**
-   * 清空所有成绩
+   * 清空所有成绩记录
    */
   const handleClearAll = useCallback(() => {
-    if (
-      confirm(
-        '确定要清空所有成绩记录吗？此操作不可撤销！',
-      )
-    ) {
+    if (confirm('确定要清空所有成绩记录吗？此操作不可撤销！')) {
       clearAllScores();
       setRecords([]);
+      setExpandedGroups(new Set());
     }
   }, [setRecords]);
 
   /**
-   * 渲染排序图标
+   * 渲染排序图标（激活时高亮并显示方向）
    */
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
@@ -209,16 +323,18 @@ export default function RankingScreen() {
     return (
       <ArrowUpDown
         size={14}
-        className={`text-emerald-400 ${
-          sortDir === 'asc' ? 'rotate-180' : ''
-        }`}
+        className={`text-emerald-400 ${sortDir === 'asc' ? 'rotate-180' : ''}`}
       />
     );
   };
 
+  // ============================================================
+  // 渲染
+  // ============================================================
+
   return (
     <div className="w-full min-h-screen bg-slate-900 text-white flex flex-col">
-      {/* 顶部栏 */}
+      {/* ===== 顶部导航栏 ===== */}
       <header className="flex items-center justify-between px-6 py-4 bg-slate-800 border-b border-slate-700 shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -233,18 +349,43 @@ export default function RankingScreen() {
             排行榜
           </h1>
         </div>
-        {records.length > 0 && (
-          <button
-            onClick={handleClearAll}
-            className="flex items-center gap-1 px-3 py-1.5 rounded bg-red-600/80 hover:bg-red-500 transition-colors text-sm"
-          >
-            <Trash2 size={14} />
-            清空全部
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* 视图切换：分组 / 平铺 */}
+          <div className="flex bg-slate-700 rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('grouped')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'grouped'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              分组视图
+            </button>
+            <button
+              onClick={() => setViewMode('flat')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                viewMode === 'flat'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              全部记录
+            </button>
+          </div>
+          {records.length > 0 && (
+            <button
+              onClick={handleClearAll}
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-red-600/80 hover:bg-red-500 transition-colors text-sm"
+            >
+              <Trash2 size={14} />
+              清空全部
+            </button>
+          )}
+        </div>
       </header>
 
-      {/* 筛选区 */}
+      {/* ===== 筛选区域 ===== */}
       <div className="px-6 py-4 bg-slate-800/50 border-b border-slate-700 shrink-0">
         <div className="flex flex-wrap gap-3 items-end">
           {/* 搜索框 */}
@@ -265,7 +406,7 @@ export default function RankingScreen() {
             </div>
           </div>
 
-          {/* 歌曲筛选 */}
+          {/* 歌曲筛选下拉 */}
           <div>
             <label className="block text-xs text-slate-400 mb-1">歌曲</label>
             <select
@@ -282,7 +423,7 @@ export default function RankingScreen() {
             </select>
           </div>
 
-          {/* 难度筛选 */}
+          {/* 难度筛选下拉 */}
           <div>
             <label className="block text-xs text-slate-400 mb-1">难度</label>
             <select
@@ -299,7 +440,7 @@ export default function RankingScreen() {
             </select>
           </div>
 
-          {/* 日期范围 */}
+          {/* 日期范围筛选 */}
           <div>
             <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
               <Calendar size={12} />
@@ -318,13 +459,21 @@ export default function RankingScreen() {
           </div>
         </div>
 
+        {/* 筛选结果统计 */}
         <div className="mt-3 text-xs text-slate-400">
-          共 {filteredRecords.length} 条记录（总计 {records.length} 条）
+          {viewMode === 'grouped' ? (
+            <>
+              共 {groupedRecords.length} 个谱面分组（总计 {filteredRecords.length} 条记录）
+            </>
+          ) : (
+            <>共 {filteredRecords.length} 条记录（总计 {records.length} 条）</>
+          )}
         </div>
       </div>
 
-      {/* 成绩列表 */}
+      {/* ===== 成绩列表区域 ===== */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {/* 空状态 */}
         {filteredRecords.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-500">
             <Trophy size={48} className="mb-4 opacity-30" />
@@ -334,7 +483,25 @@ export default function RankingScreen() {
                 : '没有符合筛选条件的记录'}
             </p>
           </div>
+        ) : viewMode === 'grouped' ? (
+          /* ===== 分组视图 ===== */
+          <div className="max-w-5xl mx-auto space-y-3">
+            {groupedRecords.map((group, index) => (
+              <GroupCard
+                key={group.key}
+                group={group}
+                rank={index + 1}
+                isExpanded={expandedGroups.has(group.key)}
+                onToggle={() => toggleGroupExpand(group.key)}
+                onDelete={handleDelete}
+                sortField={sortField}
+                onSort={toggleSort}
+                SortIcon={SortIcon}
+              />
+            ))}
+          </div>
         ) : (
+          /* ===== 平铺视图 ===== */
           <div className="max-w-5xl mx-auto">
             {/* 表头 */}
             <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700 mb-2">
@@ -379,7 +546,7 @@ export default function RankingScreen() {
             </div>
 
             {/* 记录行 */}
-            {filteredRecords.map((record, index) => (
+            {sortedFlatRecords.map((record, index) => (
               <RankingRow
                 key={record.id}
                 record={record}
@@ -394,18 +561,191 @@ export default function RankingScreen() {
   );
 }
 
+// ============================================================
+// 分组卡片组件
+// ============================================================
+
+interface GroupCardProps {
+  group: ChartGroup;
+  rank: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onDelete: (id: string) => void;
+  sortField: SortField;
+  onSort: (field: SortField) => void;
+  SortIcon: React.FC<{ field: SortField }>;
+}
+
 /**
- * 单行成绩记录组件
+ * 单个分组卡片：展示歌曲+难度的最佳成绩
+ * 点击可展开查看该分组的所有历史记录
  */
-function RankingRow({
-  record,
+function GroupCard({
+  group,
   rank,
+  isExpanded,
+  onToggle,
   onDelete,
-}: {
+}: GroupCardProps) {
+  const { best } = group;
+  const { rank: grade, color } = getRank(best.accuracy);
+
+  return (
+    <div className="bg-slate-800/60 rounded-xl overflow-hidden border border-slate-700/50 hover:border-slate-600 transition-colors">
+      {/* 分组头部（最佳成绩摘要） */}
+      <div
+        className="flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-slate-700/30 transition-colors"
+        onClick={onToggle}
+      >
+        {/* 展开/折叠箭头 */}
+        <div className="text-slate-400">
+          {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+        </div>
+
+        {/* 分组排名 */}
+        <div className="w-8 text-center">
+          {rank === 1 ? (
+            <Crown size={20} className="text-yellow-400 mx-auto" />
+          ) : rank <= 3 ? (
+            <Medal
+              size={20}
+              className={
+                rank === 2
+                  ? 'text-slate-300 mx-auto'
+                  : 'text-amber-600 mx-auto'
+              }
+            />
+          ) : (
+            <span className="text-sm font-bold text-slate-500">{rank}</span>
+          )}
+        </div>
+
+        {/* 歌曲信息 */}
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-sm truncate flex items-center gap-2">
+            {group.songTitle}
+            <span className="text-xs px-1.5 py-0.5 bg-slate-700 rounded text-slate-300 font-normal">
+              {group.difficulty}
+            </span>
+          </div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            游玩 {group.playCount} 次 · 最佳: {formatDate(best.playedAt)}
+          </div>
+        </div>
+
+        {/* 等级 */}
+        <div className={`text-4xl font-black ${color}`}>{grade}</div>
+
+        {/* 最佳分数 */}
+        <div className="text-right w-28">
+          <div className="text-lg font-bold font-mono">
+            {best.score.toLocaleString()}
+          </div>
+          <div className="text-xs text-emerald-400">
+            {(best.accuracy * 100).toFixed(1)}%
+          </div>
+        </div>
+
+        {/* 最大连击 */}
+        <div className="text-right w-16">
+          <div className="text-sm font-bold text-cyan-400">{best.maxCombo}x</div>
+          <div className="text-[10px] text-slate-500">MAX COMBO</div>
+        </div>
+
+        {/* P/G/M 统计 */}
+        <div className="text-right w-32 text-xs">
+          <span className="text-yellow-300">{best.perfect}</span>
+          {' / '}
+          <span className="text-emerald-400">{best.good}</span>
+          {' / '}
+          <span className="text-red-400">{best.miss}</span>
+        </div>
+      </div>
+
+      {/* 展开后的详细记录列表 */}
+      {isExpanded && (
+        <div className="border-t border-slate-700/50 bg-slate-900/30">
+          {/* 详细列表表头 */}
+          <div className="grid grid-cols-12 gap-2 px-4 py-2 text-[10px] text-slate-500 uppercase tracking-wider">
+            <div className="col-span-1 text-center">#</div>
+            <div className="col-span-1">等级</div>
+            <div className="col-span-4">日期</div>
+            <div className="col-span-2 text-right">分数</div>
+            <div className="col-span-2 text-right">准确率</div>
+            <div className="col-span-1 text-right">连击</div>
+            <div className="col-span-1" />
+          </div>
+
+          {/* 该分组内的所有记录 */}
+          {group.records.map((record, idx) => {
+            const recGrade = getRank(record.accuracy);
+            const isBest = idx === 0; // 第一条是最佳成绩
+            return (
+              <div
+                key={record.id}
+                className={`grid grid-cols-12 gap-2 px-4 py-2 text-sm items-center ${
+                  isBest ? 'bg-emerald-500/5' : ''
+                } hover:bg-slate-700/20 group`}
+              >
+                <div className="col-span-1 text-center">
+                  {isBest ? (
+                    <Crown size={14} className="text-yellow-400 mx-auto" />
+                  ) : (
+                    <span className="text-xs text-slate-500">{idx + 1}</span>
+                  )}
+                </div>
+                <div className="col-span-1">
+                  <span className={`text-lg font-black ${recGrade.color}`}>
+                    {recGrade.rank}
+                  </span>
+                </div>
+                <div className="col-span-4 text-xs text-slate-400">
+                  {formatDate(record.playedAt)}
+                </div>
+                <div className="col-span-2 text-right font-mono text-xs">
+                  {record.score.toLocaleString()}
+                </div>
+                <div className="col-span-2 text-right font-mono text-xs text-emerald-400">
+                  {(record.accuracy * 100).toFixed(1)}%
+                </div>
+                <div className="col-span-1 text-right font-mono text-xs text-cyan-400">
+                  {record.maxCombo}x
+                </div>
+                <div className="col-span-1 flex justify-end">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(record.id);
+                    }}
+                    className="p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    title="删除"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 单行记录组件（平铺视图使用）
+// ============================================================
+
+interface RankingRowProps {
   record: ScoreRecord;
   rank: number;
   onDelete: () => void;
-}) {
+}
+
+/**
+ * 单行成绩记录（平铺视图）
+ */
+function RankingRow({ record, rank, onDelete }: RankingRowProps) {
   const { rank: grade, color } = getRank(record.accuracy);
 
   return (

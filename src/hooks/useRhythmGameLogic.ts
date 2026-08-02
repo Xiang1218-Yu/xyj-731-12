@@ -24,7 +24,8 @@ import {
   generateId,
 } from '../types/chart';
 
-// 键盘映射：event.code -> 轨道索引
+// 键盘映射：event.code -> 轨道索引和音频按键
+// 注意：部分键盘布局上分号键的 code 可能不同，这里同时兼容 Semicolon 和 Comma
 const CODE_MAP: Record<string, { index: number; key: string }> = {
   KeyA: { index: 0, key: 'a' },
   KeyS: { index: 1, key: 's' },
@@ -35,6 +36,7 @@ const CODE_MAP: Record<string, { index: number; key: string }> = {
   KeyK: { index: 6, key: 'k' },
   KeyL: { index: 7, key: 'l' },
   Semicolon: { index: 8, key: ';' },
+  Comma: { index: 8, key: ';' }, // 兼容部分键盘布局上逗号键在同一位置
 };
 
 // 音符下落提前量（毫秒）：音符在判定线前多久出现
@@ -264,16 +266,37 @@ export function useRhythmGameLogic() {
   }, [setPlayerState, setStartTime, resetStats]);
 
   /**
+   * 从键盘事件中获取按键映射信息
+   * 优先使用 e.code，若未匹配则尝试 e.key 作为后备
+   * 这样可以兼容不同键盘布局和输入法环境
+   */
+  const getKeyInfo = useCallback((e: KeyboardEvent) => {
+    // 首先通过 e.code 查找（物理按键位置，不受输入法影响）
+    if (CODE_MAP[e.code]) return CODE_MAP[e.code];
+    // 后备：通过 e.key 查找（字符值，可能受输入法/Shift影响）
+    const keyMap: Record<string, { index: number; key: string }> = {
+      a: CODE_MAP.KeyA, s: CODE_MAP.KeyS, d: CODE_MAP.KeyD, f: CODE_MAP.KeyF,
+      j: CODE_MAP.KeyJ, k: CODE_MAP.KeyK, l: CODE_MAP.KeyL,
+      ';': CODE_MAP.Semicolon, ',': CODE_MAP.Comma,
+      ' ': CODE_MAP.Space,
+    };
+    const lowerKey = e.key.toLowerCase();
+    return keyMap[lowerKey] || null;
+  }, []);
+
+  /**
    * 处理按键按下
    */
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const keyInfo = CODE_MAP[e.code];
+      const keyInfo = getKeyInfo(e);
       if (!keyInfo || !stateRef.current.gameActive) return;
-      if (pressedKeys.current.has(e.code)) return;
+      // 使用 code 作为去重键，若 code 不可用则用 key
+      const dedupeKey = e.code || e.key;
+      if (pressedKeys.current.has(dedupeKey)) return;
 
       e.preventDefault();
-      pressedKeys.current.add(e.code);
+      pressedKeys.current.add(dedupeKey);
 
       // 首次按键时设置游戏开始时间
       setStartTime((prev) => {
@@ -323,7 +346,7 @@ export function useRhythmGameLogic() {
         applyJudgment(target.note, judgment, delta);
       }
     },
-    [setStartTime, setPlayerState, applyJudgment],
+    [setStartTime, setPlayerState, applyJudgment, getKeyInfo],
   );
 
   /**
@@ -331,11 +354,12 @@ export function useRhythmGameLogic() {
    */
   const handleKeyUp = useCallback(
     (e: KeyboardEvent) => {
-      const keyInfo = CODE_MAP[e.code];
+      const keyInfo = getKeyInfo(e);
       if (!keyInfo || !stateRef.current.gameActive) return;
 
       e.preventDefault();
-      pressedKeys.current.delete(e.code);
+      const dedupeKey = e.code || e.key;
+      pressedKeys.current.delete(dedupeKey);
 
       setPlayerState((prev) => {
         const newState = [...prev];
@@ -345,7 +369,7 @@ export function useRhythmGameLogic() {
 
       audioManager.releaseNote(keyInfo.key);
     },
-    [setPlayerState],
+    [setPlayerState, getKeyInfo],
   );
 
   // 注册键盘事件

@@ -7,12 +7,13 @@ import {
   playerStateAtom,
   startTimeAtom,
   currentChartAtom as chartAtom,
+  cameFromEditorAtom,
 } from '../atoms/gameAtoms';
 import { useEffect, useCallback } from 'react';
 import { audioManager } from '../lib/audio';
 import { useScreenOrientation } from '../hooks/useScreenOrientation';
 import { getRank } from '../types/chart';
-import { Home, RotateCcw, Trophy } from 'lucide-react';
+import { Home, RotateCcw, Trophy, Pencil } from 'lucide-react';
 
 /**
  * 游戏结算/结果屏幕
@@ -31,10 +32,12 @@ export default function ResultScreen() {
   const finalTime = useAtomValue(finalTimeAtom);
   const currentChart = useAtomValue(chartAtom);
   const stats = useAtomValue(gameStatsAtom);
+  const cameFromEditor = useAtomValue(cameFromEditorAtom);
   const setScreen = useSetAtom(screenAtom);
   const setPlayerState = useSetAtom(playerStateAtom);
   const setStartTime = useSetAtom(startTimeAtom);
   const setCurrentChart = useSetAtom(currentChartAtom);
+  const setCameFromEditor = useSetAtom(cameFromEditorAtom);
 
   // 结果页出现时确保所有声音停止
   useEffect(() => {
@@ -71,8 +74,23 @@ export default function ResultScreen() {
     setPlayerState([0, 0, 0, 0, 0, 0, 0, 0, 0]);
     setStartTime(0);
     setCurrentChart(null);
+    setCameFromEditor(false);
     setScreen('levelSelect');
-  }, [unlockOrientation, setPlayerState, setStartTime, setCurrentChart, setScreen]);
+  }, [unlockOrientation, setPlayerState, setStartTime, setCurrentChart, setCameFromEditor, setScreen]);
+
+  /**
+   * 返回谱面编辑器继续编辑（仅当从编辑器进入时可用）
+   */
+  const handleBackToEditor = useCallback(() => {
+    audioManager.releaseAll();
+    unlockOrientation();
+    setPlayerState([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    setStartTime(0);
+    // 清空游戏谱面引用，编辑器中保留编辑数据
+    setCurrentChart(null);
+    setCameFromEditor(false);
+    setScreen('editor');
+  }, [unlockOrientation, setPlayerState, setStartTime, setCurrentChart, setCameFromEditor, setScreen]);
 
   /**
    * 查看排行榜
@@ -189,6 +207,16 @@ export default function ResultScreen() {
             <RotateCcw size={18} />
             再来一次
           </button>
+          {/* 从编辑器进入时显示返回编辑器按钮 */}
+          {cameFromEditor && (
+            <button
+              onClick={handleBackToEditor}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-bold py-3 px-6 rounded-xl transition-transform hover:scale-105 cursor-pointer"
+            >
+              <Pencil size={18} />
+              返回编辑器
+            </button>
+          )}
           <button
             onClick={handleViewRanking}
             className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-6 rounded-xl transition-transform hover:scale-105 cursor-pointer"

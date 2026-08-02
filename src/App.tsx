@@ -1,7 +1,11 @@
-import { useAtom, useAtomValue } from 'jotai';
-import { RefreshCw, Home, Maximize, Minimize } from 'lucide-react';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { RefreshCw, Home, Maximize, Minimize, Pencil } from 'lucide-react';
 import { audioManager } from './lib/audio';
-import { screenAtom, currentChartAtom } from './atoms/gameAtoms';
+import {
+  screenAtom,
+  currentChartAtom,
+  cameFromEditorAtom,
+} from './atoms/gameAtoms';
 import GameContainer from './components/GameContainer';
 import { useGameLogic } from './hooks/useGameLogic';
 import { useGlobalAudio } from './hooks/useGlobalAudio';
@@ -29,6 +33,9 @@ function App() {
   const { lockOrientation, unlockOrientation } = useScreenOrientation();
   const [screen, setScreen] = useAtom(screenAtom);
   const currentChart = useAtomValue(currentChartAtom);
+  const cameFromEditor = useAtomValue(cameFromEditorAtom);
+  const setCameFromEditor = useSetAtom(cameFromEditorAtom);
+  const setCurrentChart = useSetAtom(currentChartAtom);
   const { resetGameState: resetClassicGame } = useGameLogic();
 
   useEffect(() => {
@@ -38,15 +45,27 @@ function App() {
 
   /**
    * 返回主菜单
-   * 同时处理经典模式和节奏模式的清理
    */
   const handleBackToMenu = () => {
     audioManager.releaseAll();
     unlockOrientation();
-    // 经典模式重置
     resetClassicGame();
-    // 回到主菜单
+    setCurrentChart(null);
+    setCameFromEditor(false);
     setScreen('levelSelect');
+  };
+
+  /**
+   * 返回谱面编辑器继续编辑
+   * 仅当游戏从编辑器进入时可用
+   */
+  const handleBackToEditor = () => {
+    audioManager.releaseAll();
+    unlockOrientation();
+    // 清空当前游戏谱面引用（编辑器中保留原始数据）
+    setCurrentChart(null);
+    setCameFromEditor(false);
+    setScreen('editor');
   };
 
   /**
@@ -72,8 +91,11 @@ function App() {
 
   // 只有在游戏屏幕才显示控制按钮
   const showGameControls = screen === 'game';
-  // 只有在游戏或主菜单使用绿色背景；其他页面用深色背景
-  const useDarkBg = screen === 'editor' || screen === 'ranking' || (screen === 'result' && currentChart);
+  // 编辑器、排行榜、节奏游戏结算页使用深色背景
+  const useDarkBg =
+    screen === 'editor' ||
+    screen === 'ranking' ||
+    (screen === 'result' && currentChart);
 
   return (
     <div
@@ -85,7 +107,18 @@ function App() {
     >
       {/* 游戏中的右上角控制按钮 */}
       {showGameControls && (
-        <div className="absolute top-4 right-4 flex items-center gap-4 z-50">
+        <div className="absolute top-4 right-4 flex items-center gap-2 z-50">
+          {/* 从编辑器进入时显示返回编辑器按钮 */}
+          {cameFromEditor && (
+            <button
+              onClick={handleBackToEditor}
+              className="flex items-center gap-1 px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-500 transition-colors text-sm"
+              title="返回编辑器"
+            >
+              <Pencil size={16} />
+              编辑器
+            </button>
+          )}
           <button
             onClick={handleToggleFullscreen}
             className="p-2 text-white/50 hover:text-white transition-colors cursor-pointer"
@@ -107,7 +140,7 @@ function App() {
           >
             <Home size={20} />
           </button>
-        </div>
+       <[CLS_never_used_51bce0c785ca2f68081bfa7d91973934]></div>
       )}
 
       <GameContainer />

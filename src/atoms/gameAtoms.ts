@@ -79,6 +79,12 @@ export const currentLevelAtom = atom(async (get) => {
 /** 当前正在游玩的谱面（从编辑器或导入的文件） */
 export const currentChartAtom = atom<Chart | null>(null);
 
+/**
+ * 标记当前节奏游戏是否从编辑器进入
+ * 用于游戏中/结算页显示"返回编辑器"按钮
+ */
+export const cameFromEditorAtom = atom<boolean>(false);
+
 /** 玩家按键状态 [A, S, D, F, Space, J, K, L, ;] */
 export const playerStateAtom = atom<number[]>([0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
@@ -91,11 +97,18 @@ export const startTimeAtom = atom<number>(0);
 /** 游戏结束时间（毫秒，用于成绩记录） */
 export const finalTimeAtom = atom<number>(0);
 
-/** 判断游戏是否激活 */
+/**
+ * 判断游戏是否激活
+ * 两种模式下都算激活：
+ * - 节奏模式：currentChartAtom 不为 null（来自编辑器或导入的谱面）
+ * - 经典模式：selectedLevelInfoAtom 不为 null（内置关卡）
+ */
 export const gameActiveAtom = atom((get) => {
   const screen = get(screenAtom);
+  if (screen !== 'game') return false;
   const chart = get(currentChartAtom);
-  return screen === 'game' && chart !== null;
+  const levelInfo = get(selectedLevelInfoAtom);
+  return chart !== null || levelInfo !== null;
 });
 
 // ============================================================

@@ -57,7 +57,7 @@ function GameContainer() {
   };
 
   return (
-    <main id="game-container" className="w-full h-full">
+    <main id="game-container" className="w-full self-stretch flex items-center justify-center">
       <ErrorBoundary
         fallback={
           <div className="text-center p-8 bg-red-500/20 rounded-lg text-white">

@@ -1,17 +1,18 @@
-import { useEffect } from 'react';
+// ============================================================
+// Hash 路由 Hook (useHashRoute)
+// ============================================================
+// 支持以下路径：
+// - #/ 或空 : 主菜单 (levelSelect)
+// - #/editor : 谱面编辑器
+// - #/ranking : 排行榜
+//
+// 游戏中和结算页面不修改 URL hash，避免与编辑器/排行榜导航冲突。
+// 使用 isProgrammaticRef 标志防止程序化修改 hash 时触发循环更新。
+// ============================================================
+
+import { useEffect, useRef } from 'react';
 import { useAtom } from 'jotai';
 import { screenAtom, type Screen } from '../atoms/gameAtoms';
-
-/**
- * 简单的 Hash 路由 Hook
- *
- * 支持以下路径：
- * - #/ 或空 : 主菜单 (levelSelect)
- * - #/editor : 谱面编辑器
- * - #/ranking : 排行榜
- *
- * 同时在屏幕切换时自动更新 URL hash，支持浏览器前进/后退
- */
 
 // 路径到屏幕的映射
 const PATH_TO_SCREEN: Record<string, Screen> = {
@@ -20,11 +21,9 @@ const PATH_TO_SCREEN: Record<string, Screen> = {
   '/ranking': 'ranking',
 };
 
-// 屏幕到路径的映射
-const SCREEN_TO_PATH: Record<Screen, string> = {
+// 屏幕到路径的映射（game/result 不映射，保持当前 URL）
+const SCREEN_TO_PATH: Partial<Record<Screen, string>> = {
   levelSelect: '/',
-  game: '/',
-  result: '/',
   editor: '/editor',
   ranking: '/ranking',
 };
@@ -43,10 +42,18 @@ function getScreenFromHash(): Screen {
  */
 export function useHashRoute() {
   const [screen, setScreen] = useAtom(screenAtom);
+  // 标志位：标记当前 hash 变更是由代码程序化触发的，
+  // 此时 hashchange 事件不应再次更新 screen，防止循环
+  const isProgrammaticRef = useRef(false);
 
-  // 监听 hash 变化（浏览器前进/后退）
+  // 监听 hash 变化（浏览器前进/后退按钮）
   useEffect(() => {
     const handleHashChange = () => {
+      // 如果是我们自己程序化设置的 hash，忽略此次事件
+      if (isProgrammaticRef.current) {
+        isProgrammaticRef.current = false;
+        return;
+      }
       const newScreen = getScreenFromHash();
       setScreen(newScreen);
     };
@@ -62,12 +69,16 @@ export function useHashRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 当屏幕变化时更新 URL hash（仅在非游戏/结果屏幕时）
+  // 当屏幕变化时更新 URL hash（仅对有映射的屏幕）
   useEffect(() => {
     const targetPath = SCREEN_TO_PATH[screen];
-    const currentPath = window.location.hash.replace(/^#/, '') || '/';
+    // 如果当前屏幕没有对应的路径（如 game/result），不修改 hash
+    if (!targetPath) return;
 
+    const currentPath = window.location.hash.replace(/^#/, '') || '/';
     if (targetPath !== currentPath) {
+      // 标记为程序化变更，防止 hashchange 回调循环触发
+      isProgrammaticRef.current = true;
       window.location.hash = targetPath;
     }
   }, [screen]);
