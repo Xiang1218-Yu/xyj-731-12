@@ -15,6 +15,13 @@ import { rhythmStatusAtom } from './rhythmAtoms';
 export type Screen = 'levelSelect' | 'game' | 'result';
 
 /**
+ * 游戏模式：
+ * - rhythm  音游下落模式（新玩法：判定 / 连击 / 评分 / 成绩记录）
+ * - classic 经典模式（原版玩法：按键序列跟打 + 计时评级）
+ */
+export type GameMode = 'rhythm' | 'classic';
+
+/**
  * 一首可游玩的歌曲条目。
  * source 含义：
  * - builtin 内置关卡（由 public/levels/*.json 转换为谱面）
@@ -34,6 +41,9 @@ export interface SongEntry {
 
 /** 当前显示的屏幕 */
 export const screenAtom = atom<Screen>('levelSelect');
+
+/** 当前游戏模式（下落 / 经典），选歌页可切换 */
+export const gameModeAtom = atom<GameMode>('rhythm');
 
 /** 当前选择的音阶（决定按键音色），保留原有功能 */
 export const scaleAtom = atom<ScaleName | 'Custom'>('C Major Scale');
@@ -93,7 +103,11 @@ export const songListAtom = atom(async (get) => {
 /** 当前正在游玩 / 结算的歌曲 */
 export const activeSongAtom = atom<SongEntry | null>(null);
 
-/** 派生状态：游戏是否处于「可对局」状态（用于过滤按键输入） */
+/** 派生状态：下落模式是否处于「可对局」状态（用于过滤按键输入） */
 export const gameActiveAtom = atom(
-  (get) => get(screenAtom) === 'game' && get(activeSongAtom) !== null && get(rhythmStatusAtom) === 'playing',
+  (get) =>
+    get(gameModeAtom) === 'rhythm' &&
+    get(screenAtom) === 'game' &&
+    get(activeSongAtom) !== null &&
+    get(rhythmStatusAtom) === 'playing',
 );

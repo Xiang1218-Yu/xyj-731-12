@@ -61,7 +61,7 @@ function ResultScreen() {
   }
 
   return (
-    <section className="w-[90%] max-w-3xl p-6 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20 text-center">
+    <section className="w-[98%] max-w-7xl p-6 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20 text-center">
       <h2 className="text-2xl font-black mb-1 truncate">{song.title}</h2>
       <p className="text-sm text-white/60 mb-4">Lv.{song.difficulty} · 成绩已保存到排行榜</p>
 

@@ -60,7 +60,7 @@ function GameScreen() {
   const countdown = songTime < 0 ? Math.ceil(-songTime / (LEAD_IN_MS / 3)) : 0;
 
   return (
-    <section className="w-[96%] max-w-4xl h-[92vh] flex flex-col p-4 rounded-2xl bg-black/30 backdrop-blur-lg border border-white/20 overflow-hidden">
+    <section className="w-[98%] max-w-7xl h-[94vh] flex flex-col p-4 rounded-2xl bg-black/30 backdrop-blur-lg border border-white/20 overflow-hidden">
       {/* ===== 顶部 HUD：歌曲信息 + 实时判定数据 ===== */}
       <header className="flex justify-between items-center gap-4 mb-2">
         <div className="min-w-0">

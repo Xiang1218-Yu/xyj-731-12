@@ -109,21 +109,23 @@ export interface GenerateOptions {
 
 /**
  * 按密度生成随机谱面：
- * 以八分音符为最小网格逐个掷骰，单格命中概率 = density / 2；
- * 每个命中的格子有 12% 概率追加一条不同轨道的音符组成双押。
+ * 以十六分音符为最小网格（每拍 4 格）逐个掷骰，单格命中概率 = density / 4，
+ * 因此「平均每拍音符数」与 density 参数严格一致：
+ * density=0.25 → 约每 4 拍 1 个音符；density=4 → 每个十六分格填满（4 个/拍）。
+ * 每个命中的格子另有 12% 概率追加一条不同轨道的音符组成双押（双押不计入密度）。
  */
 export function generateRandomChart(options: GenerateOptions): Chart {
   const { bpm, offsetMs, density, beats, difficulty } = options;
   const rand = mulberry32(options.seed ?? Date.now());
   const beatMs = msPerBeat(bpm);
   const notes: ChartNote[] = [];
-  // 命中概率钳制在 (0, 1] 之间，density=2 时每个八分格必出音符
-  const probability = Math.min(1, Math.max(0.05, density / 2));
-  const slots = beats * 2; // 八分音符网格
+  // 十六分网格：density 直接等于平均每拍音符数（密度上限 4/拍 与 UI 范围一致）
+  const probability = Math.min(1, Math.max(0.01, density / 4));
+  const slots = beats * 4; // 每拍 4 个十六分格
 
   for (let slot = 0; slot < slots; slot++) {
     if (rand() >= probability) continue;
-    const time = Math.round(Math.max(0, offsetMs) + slot * (beatMs / 2));
+    const time = Math.round(Math.max(0, offsetMs) + slot * (beatMs / 4));
     const lane = Math.floor(rand() * LANE_COUNT);
     notes.push({ id: makeNoteId(), time, lane, type: 'tap', duration: 0 });
     // 小概率双押：随机选一条不同的轨道补一个同时音符

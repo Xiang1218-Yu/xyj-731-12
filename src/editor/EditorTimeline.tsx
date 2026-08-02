@@ -232,9 +232,11 @@ function EditorTimeline() {
         beatCountRef.current += 1;
         nextBeatTimeRef.current += beatMs;
       }
-      // 音符发声：播放头越过音符时间即播放对应轨道音色
+      // 音符发声：播放头越过音符时间即播放对应轨道音色；
+      // hold 长条音符按其 duration 持续发声，tap 单点短促发声
       while (nextNoteIndexRef.current < notes.length && notes[nextNoteIndexRef.current].time <= current) {
-        audioManager.playLaneNote(notes[nextNoteIndexRef.current].lane);
+        const note = notes[nextNoteIndexRef.current];
+        audioManager.playLaneNote(note.lane, note.type === 'hold' ? note.duration : undefined);
         nextNoteIndexRef.current += 1;
       }
 

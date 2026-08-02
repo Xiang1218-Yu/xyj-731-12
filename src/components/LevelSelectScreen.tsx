@@ -8,13 +8,24 @@
  */
 import { Suspense, useState } from 'react';
 import { useAtom, useSetAtom, useAtomValue } from 'jotai';
-import { screenAtom, scaleAtom, songListAtom, activeSongAtom, type SongEntry } from '../atoms/gameAtoms';
+import { screenAtom, scaleAtom, songListAtom, activeSongAtom, gameModeAtom, type SongEntry } from '../atoms/gameAtoms';
+import {
+  activeLegacyLevelDataAtom,
+  classicFinalTimeAtom,
+  classicPlayerStateAtom,
+  classicStartTimeAtom,
+  classicStepAtom,
+  legacyLevelIndexAtom,
+  selectedLegacyLevelAtom,
+  type LegacyLevelData,
+  type LegacyLevelMeta,
+} from '../atoms/classicAtoms';
 import { audioManager, scales, type ScaleName } from '../lib/audio';
 import { generateRandomChart } from '../lib/chart';
 import { useMenuKeyboard } from '../hooks/useMenuKeyboard';
 import { useFullscreen } from '../hooks/useFullscreen';
 import { useScreenOrientation } from '../hooks/useScreenOrientation';
-import { ChartColumn, PencilLine, Shuffle } from 'lucide-react';
+import { ChartColumn, Music4, PencilLine, Shuffle } from 'lucide-react';
 
 /** 内置随机歌曲的默认参数 */
 const RANDOM_SONG_OPTIONS = { bpm: 120, offsetMs: 0, density: 0.75, beats: 64, difficulty: 5 };
@@ -113,9 +124,68 @@ function SongList() {
   );
 }
 
+/**
+ * 经典模式关卡列表（原版玩法）：
+ * 读取关卡索引 → 点击后 fetch 关卡 JSON 写入同步 atom → 进入游戏屏。
+ */
+function ClassicLevelList() {
+  const levelIndex = useAtomValue(legacyLevelIndexAtom);
+  const setScreen = useSetAtom(screenAtom);
+  const setSelectedLegacyLevel = useSetAtom(selectedLegacyLevelAtom);
+  const setActiveLevelData = useSetAtom(activeLegacyLevelDataAtom);
+  const setPlayerState = useSetAtom(classicPlayerStateAtom);
+  const setStep = useSetAtom(classicStepAtom);
+  const setStartTime = useSetAtom(classicStartTimeAtom);
+  const setFinalTime = useSetAtom(classicFinalTimeAtom);
+  const { enterFullscreen } = useFullscreen();
+  const { lockOrientation } = useScreenOrientation();
+
+  const handleSelect = async (meta: LegacyLevelMeta, index: number) => {
+    // 音频上下文必须在用户手势中启动
+    if (!audioManager.isInitialized()) {
+      await audioManager.start();
+    }
+    // 全屏 / 横屏：失败或超时都不阻塞进游戏
+    await withTimeout(Promise.allSettled([enterFullscreen(), lockOrientation('landscape')]), 800);
+
+    // 拉取关卡数据（按键序列 + 评级阈值）并写入同步 atom
+    const response = await fetch(`/levels/${meta.file}`);
+    if (!response.ok) return;
+    const data = (await response.json()) as LegacyLevelData;
+
+    // 重置经典模式对局状态
+    setPlayerState([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    setStep(0);
+    setStartTime(0);
+    setFinalTime(0);
+
+    setActiveLevelData(data);
+    setSelectedLegacyLevel({ meta, index });
+    setScreen('game');
+  };
+
+  return (
+    <div className="flex flex-col gap-4 max-h-[38vh] overflow-y-auto pr-1 border-t border-white/20 pt-4">
+      <p className="text-xs text-white/50 -mb-1">
+        经典玩法：把 9 个按键按成与上方目标序列完全一致即可前进，全部完成后按用时评级。
+      </p>
+      {levelIndex.map((meta, index) => (
+        <button
+          key={meta.id}
+          onClick={() => void handleSelect(meta, index)}
+          className="bg-white text-emerald-600 font-bold border-none py-3 px-4 rounded-xl cursor-pointer transition-transform duration-100 ease-in-out hover:scale-[1.03] text-left"
+        >
+          {meta.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function LevelSelectScreen() {
   useMenuKeyboard(); // 在选歌页屏蔽游戏按键的默认行为（如空格滚屏）
   const [currentScale, setCurrentScale] = useAtom(scaleAtom);
+  const [mode, setMode] = useAtom(gameModeAtom);
   const [customScaleInput, setCustomScaleInput] = useState('C2 D2 E2 G2 A2 C3 D3 E3 G3');
   const [showCustomInput, setShowCustomInput] = useState(false);
 
@@ -143,7 +213,7 @@ function LevelSelectScreen() {
   };
 
   return (
-    <section className="w-[90%] max-w-3xl p-5 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20">
+    <section className="w-[98%] max-w-7xl p-5 rounded-2xl bg-black/10 backdrop-blur-lg border border-white/20">
       {/* 标题 + 编辑器 / 排行榜入口（独立页面，整页跳转） */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="font-black text-4xl">Finger Dance</h1>
@@ -212,8 +282,29 @@ function LevelSelectScreen() {
         )}
       </div>
 
+      {/* 模式切换：下落模式（音游） / 经典模式（原版按键跟打） */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <button
+          onClick={() => setMode('rhythm')}
+          className={`flex items-center justify-center gap-1.5 p-2.5 rounded-lg text-sm font-bold transition-colors cursor-pointer ${
+            mode === 'rhythm' ? 'bg-white text-emerald-600' : 'bg-white/10 hover:bg-white/20 text-white'
+          }`}
+        >
+          <Music4 size={16} />
+          下落模式（音游）
+        </button>
+        <button
+          onClick={() => setMode('classic')}
+          className={`flex items-center justify-center gap-1.5 p-2.5 rounded-lg text-sm font-bold transition-colors cursor-pointer ${
+            mode === 'classic' ? 'bg-white text-emerald-600' : 'bg-white/10 hover:bg-white/20 text-white'
+          }`}
+        >
+          经典模式（按键跟打）
+        </button>
+      </div>
+
       <Suspense fallback={<div className="text-center p-8">Loading songs...</div>}>
-        <SongList />
+        {mode === 'rhythm' ? <SongList /> : <ClassicLevelList />}
       </Suspense>
     </section>
   );

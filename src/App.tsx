@@ -1,9 +1,10 @@
-import { useAtom } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { RefreshCw, Home, Maximize, Minimize } from 'lucide-react';
 import { audioManager } from './lib/audio';
-import { screenAtom } from './atoms/gameAtoms';
+import { gameModeAtom, screenAtom } from './atoms/gameAtoms';
 import GameContainer from './components/GameContainer';
 import { useGameLogic } from './hooks/useGameLogic';
+import { useClassicGameLogic } from './hooks/useClassicGameLogic';
 import { useGlobalAudio } from './hooks/useGlobalAudio';
 import { useEffect, useState } from 'react';
 import TouchOverlay from './components/TouchOverlay';
@@ -17,15 +18,29 @@ function App() {
   const { isFullscreen, toggleFullscreen } = useFullscreen();
   const { lockOrientation, unlockOrientation } = useScreenOrientation();
   const [screen, setScreen] = useAtom(screenAtom);
+  const mode = useAtomValue(gameModeAtom);
+  // 两种模式的逻辑 hook 同时挂载，各自通过「模式 + 屏幕」守卫过滤输入，互不干扰
   const { resetGameState } = useGameLogic();
+  const { resetClassicState } = useClassicGameLogic();
   const [showTouchOverlay, setShowTouchOverlay] = useState(false);
 
   useEffect(() => {
     setShowTouchOverlay(isTouchDevice());
   }, []);
 
+  /** 按当前模式重置对局（下落模式停止 rAF 循环，经典模式清零步骤与计时） */
+  const handleReset = () => {
+    if (mode === 'classic') {
+      resetClassicState();
+    } else {
+      resetGameState();
+    }
+  };
+
   const handleBackToMenu = () => {
-    resetGameState(); // 停止对局（置为 idle，rAF 循环随之停止）
+    // 两种模式的状态都重置，保证返回选歌后干净
+    resetGameState();
+    resetClassicState();
     audioManager.releaseAll();
     unlockOrientation();
     setScreen('levelSelect');
@@ -53,7 +68,7 @@ function App() {
             {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
           </button>
           <button
-            onClick={resetGameState}
+            onClick={handleReset}
             className="p-2 text-white/50 hover:text-white transition-colors cursor-pointer"
             title="Restart Level"
           >
